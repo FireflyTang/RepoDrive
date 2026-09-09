@@ -76,7 +76,7 @@ function encodePath(value) { return value.split('/').filter(Boolean).map(encodeU
 class Client {
   constructor(config) { this.config = config; this.dispatcher = config.proxy ? new ProxyAgent(config.proxy) : undefined; }
   async request(apiPath, options = {}) {
-    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.1' };
+    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.2' };
     if (this.config.token) headers.Authorization = `Bearer ${this.config.token}`;
     const response = await fetch(`https://api.github.com${apiPath}`, { method: options.method || 'GET', headers, body: options.body ? JSON.stringify(options.body) : undefined, dispatcher: this.dispatcher });
     if (!response.ok) {

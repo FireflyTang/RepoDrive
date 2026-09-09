@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+if ! command -v repodrive >/dev/null 2>&1; then
+  echo "RepoDrive CLI is not installed. Install the repo-drive-0.2.0.tgz package from the Release first." >&2
+  exit 127
+fi
+
+exec repodrive "$@"
