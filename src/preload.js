@@ -1,7 +1,7 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
-const uploadAvailable = process.platform === 'darwin';
+const uploadAvailable = process.platform === 'darwin' || process.platform === 'linux';
 
 const api = {
   info: () => ipcRenderer.invoke('app:info'),

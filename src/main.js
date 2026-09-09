@@ -87,13 +87,11 @@ function registerIpc() {
   ipcMain.handle('settings:get', () => settings.getPublic());
   ipcMain.handle('settings:save', async (_event, form) => {
     const previous = { ...resolvedConfig() };
-    const stored = settings.getPublic();
-    const repository = stored.fixedRepository ? stored.repository : form.repository;
-    const parsed = parseRepository(repository);
+    const parsed = parseRepository(form.repository);
     const clean = {
       repository: `${parsed.owner}/${parsed.repo}`,
-      branch: validateBranch(stored.fixedRepository ? stored.branch : form.branch),
-      rootPath: normalizeRepoPath(stored.fixedRepository ? stored.rootPath : form.rootPath),
+      branch: validateBranch(form.branch),
+      rootPath: normalizeRepoPath(form.rootPath),
       proxy: validateProxy(form.proxy),
       token: String(form.token || '').trim(),
       clearToken: Boolean(form.clearToken)

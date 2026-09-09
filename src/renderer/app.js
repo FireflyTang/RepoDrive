@@ -54,11 +54,10 @@ function hideTransfer(){ $('transferBanner').classList.add('hidden'); }
 
 async function init() {
   const [info, saved]=await Promise.all([window.repoDrive.info(),window.repoDrive.getSettings()]); state.canUpload=info.canUpload; state.settings=saved;
-  $('readonlyNotice').classList.toggle('hidden',info.canUpload); $('uploadButton').classList.toggle('hidden',!info.canUpload); $('platformNote').textContent=info.canUpload?'macOS 完整模式 · 可浏览、下载与上传': 'Windows 只读模式 · 上传在系统层禁用';
+  $('readonlyNotice').classList.toggle('hidden',info.canUpload); $('uploadButton').classList.toggle('hidden',!info.canUpload); $('platformNote').textContent=info.canUpload?`${info.platform === 'linux' ? 'Linux' : 'macOS'} 完整模式 · 可浏览、下载与上传`: 'Windows 只读模式 · 上传在系统层禁用';
   $('uploadFolderButton').classList.toggle('hidden',!info.canUpload); setConnected(false);
   if (!info.canUpload) $('tokenHint').textContent='Windows 只接受 Contents: Read-only 的细粒度 Token；检测到写权限会拒绝连接。';
   for(const id of ['repository','branch','rootPath','proxy']) $(id).value=saved[id]||'';
-  if(saved.fixedRepository){ for(const id of ['repository','branch','rootPath']) $(id).disabled=true; $('repository').title='此项由 repodrive.config.json 固定'; $('repoHint').textContent='代码仓、分支和根目录由 repodrive.config.json 固定'; }
   $('clearTokenRow').classList.toggle('hidden',!saved.hasToken); if(saved.hasToken) $('token').placeholder='已安全保存；留空则保持不变';
   if(saved.repository) { try { const repo=await window.repoDrive.connect(); setConnected(true,repo.fullName); await navigate(''); } catch(error){ setConnected(false); showToast(errorMessage(error),true); showView('settings'); } }
 }

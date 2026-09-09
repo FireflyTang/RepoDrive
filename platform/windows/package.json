@@ -1,6 +1,6 @@
 {
   "name": "repo-drive-readonly-windows",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Read-only GitHub repository browser and downloader for Windows.",
   "main": "main.js",
   "author": "RepoDrive contributors",

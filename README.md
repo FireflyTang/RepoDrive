@@ -2,13 +2,14 @@
 
 把一个指定的 GitHub 代码仓当作轻量文件盘使用的桌面客户端。
 
-> 本仓库中的 `repodrive.config.json` 是预配置文件。自行部署时，请在打包前把其中的代码仓地址改成自己的固定文件盘仓库；不要把访问 Token 写入该文件。
+首次打开时填写一次代码仓、分支和可选根目录，连接成功后会自动保存，以后浏览和传输都无需重复配置。随包的 `repodrive.config.json` 仅用于提供可选初始值，不会锁定设置。不要把访问 Token 写入该文件。
 
 ## 能力与安全边界
 
-- macOS：浏览、下载、上传文件及完整目录；目录保持原层级，不压缩。
+- macOS：桌面客户端支持浏览、下载、上传文件及完整目录；目录保持原层级，不压缩。
+- Linux：CLI 和 Skill 支持浏览、下载与上传；桌面安装包暂未提供。
 - Windows：独立的纯只读构建，只包含浏览、目录/文件下载和设置代码。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或写请求；连接时还会拒绝 GitHub 报告为可写的 Token。
-- macOS 和 Windows：都可指定 HTTP/HTTPS 代理。
+- macOS、Windows 和 Linux CLI：都可指定 HTTP/HTTPS 代理。
 - Token 使用 Electron `safeStorage` 加密后保存在当前用户的应用数据目录，不会写进代码仓。
 
 RepoDrive 使用 GitHub Contents API，因此单文件不能超过 100 MB。它适合文档、图片、压缩包和小型项目资料，不适合频繁同步或超大文件。每次上传都会产生一个 Git commit；同名文件会更新。
@@ -20,9 +21,9 @@ RepoDrive 使用 GitHub Contents API，因此单文件不能超过 100 MB。它�
 建议创建 fine-grained personal access token，并且只授权目标仓库：
 
 - Windows 浏览/下载：Repository permissions → Contents: Read-only（必须；可写 Token 会被拒绝）
-- macOS 上传：Repository permissions → Contents: Read and write
+- macOS/Linux 上传：Repository permissions → Contents: Read and write
 
-公开仓库浏览和下载可不填写 Token。macOS 会优先复用本机 GitHub CLI 的登录；否则私有仓库和上传操作必须填写 Token。填写的 Token 会使用系统安全存储加密。
+公开仓库浏览和下载可不填写 Token。macOS 桌面端以及 macOS/Linux CLI 可复用本机 GitHub CLI 登录；否则私有仓库和上传操作必须填写 Token。桌面端填写的 Token 会使用系统安全存储加密。
 
 ## 本地运行
 
@@ -33,11 +34,12 @@ npm start
 
 ## 命令行
 
-先在项目根目录的 `repodrive.config.json` 中固定填写代码仓、分支、仓库内根目录和代理。安装项目依赖后，可直接使用 `npm exec repodrive --`，或通过 `npm link` 安装全局的 `repodrive` 命令：
+CLI 会自动读取项目根目录的 `repodrive.config.json`。只需配置一次代码仓、分支、仓库内根目录和代理，之后每次命令无需重复指定。安装项目依赖后，可直接使用 `npm exec repodrive --`，或通过 `npm link` 安装全局的 `repodrive` 命令：
 
 ```bash
 export REPODRIVE_TOKEN=github_pat_xxx
 
+repodrive configure --repo owner/repository --branch main
 repodrive list
 repodrive download documents --output ./documents
 repodrive upload ./photos --path archive

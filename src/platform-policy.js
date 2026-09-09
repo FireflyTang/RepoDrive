@@ -1,12 +1,12 @@
 'use strict';
 
 function canUpload(platform = process.platform) {
-  return platform === 'darwin';
+  return platform === 'darwin' || platform === 'linux';
 }
 
 function assertUploadAllowed(platform = process.platform) {
   if (!canUpload(platform)) {
-    const error = new Error('此客户端为只读版本：Windows 不允许上传。');
+    const error = new Error('此平台为只读模式：Windows 不允许上传。');
     error.code = 'UPLOAD_PLATFORM_BLOCKED';
     throw error;
   }

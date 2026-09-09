@@ -18,6 +18,7 @@ function usage() {
   repodrive download <远程路径> --output <本地路径> [选项]
   repodrive upload <本地文件或目录> [--path <远程父目录>] [选项]
   repodrive info [选项]
+  repodrive configure --repo owner/repo [选项]
 
 公共选项:
   --config 文件           固定配置文件（默认自动查找 repodrive.config.json）
@@ -60,8 +61,8 @@ function loadConfig(args) {
     args.config,
     process.env.REPODRIVE_CONFIG,
     path.join(process.cwd(), 'repodrive.config.json'),
-    path.join(__dirname, '..', 'repodrive.config.json'),
-    path.join(os.homedir(), '.config', 'repodrive', 'config.json')
+    path.join(os.homedir(), '.config', 'repodrive', 'config.json'),
+    path.join(__dirname, '..', 'repodrive.config.json')
   ].filter(Boolean);
   const selected = candidates.find((candidate) => fsSync.existsSync(path.resolve(candidate)));
   if (!selected) return { data: {}, path: '' };
@@ -70,13 +71,31 @@ function loadConfig(args) {
   catch (error) { throw new Error(`无法读取配置文件 ${absolute}: ${error.message}`); }
 }
 
+async function saveConfiguration(args, current) {
+  const repository = args.repo || current.repository;
+  if (!repository || repository === 'OWNER/REPOSITORY') throw new Error('configure 需要 --repo owner/repository');
+  const parsed = parseRepository(repository);
+  const data = {
+    repository: `${parsed.owner}/${parsed.repo}`,
+    branch: validateBranch(args.branch || current.branch || 'main'),
+    rootPath: normalizeRepoPath(args.root || current.rootPath || ''),
+    proxy: validateProxy(args.proxy || current.proxy || '')
+  };
+  const explicit = args.config || process.env.REPODRIVE_CONFIG;
+  const projectConfig = path.join(process.cwd(), 'repodrive.config.json');
+  const target = path.resolve(explicit || (fsSync.existsSync(projectConfig) ? projectConfig : path.join(os.homedir(), '.config', 'repodrive', 'config.json')));
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, `${JSON.stringify(data, null, 2)}\n`, { mode: 0o600 });
+  return { configured: true, config: target, ...data };
+}
+
 function joinRepoPath(...parts) { return parts.map(normalizeRepoPath).filter(Boolean).join('/'); }
 function encodePath(value) { return value.split('/').filter(Boolean).map(encodeURIComponent).join('/'); }
 
 class Client {
   constructor(config) { this.config = config; this.dispatcher = config.proxy ? new ProxyAgent(config.proxy) : undefined; }
   async request(apiPath, options = {}) {
-    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.2' };
+    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.3' };
     if (this.config.token) headers.Authorization = `Bearer ${this.config.token}`;
     const response = await fetch(`https://api.github.com${apiPath}`, { method: options.method || 'GET', headers, body: options.body ? JSON.stringify(options.body) : undefined, dispatcher: this.dispatcher });
     if (!response.ok) {
@@ -126,8 +145,12 @@ async function main() {
   const args = parseArgs(process.argv.slice(2)); const command = args._[0];
   if (!command || args.help || command === 'help') return usage();
   const loaded = loadConfig(args); const fixed = loaded.data;
+  if (command === 'configure') {
+    console.log(JSON.stringify(await saveConfiguration(args, fixed), null, args.json ? 0 : 2));
+    return;
+  }
   const repository = args.repo || process.env.REPODRIVE_REPO || fixed.repository;
-  if (!repository || repository === 'OWNER/REPOSITORY') throw new Error(`请先在 ${loaded.path || 'repodrive.config.json'} 中填写固定 repository`);
+  if (!repository || repository === 'OWNER/REPOSITORY') throw new Error('请先运行 repodrive configure --repo owner/repository 完成一次性配置');
   const parsed = parseRepository(repository);
   const config = { ...parsed, branch: validateBranch(args.branch || process.env.REPODRIVE_BRANCH || fixed.branch || 'main'), root: normalizeRepoPath(args.root || process.env.REPODRIVE_ROOT || fixed.rootPath || ''), proxy: validateProxy(args.proxy || process.env.REPODRIVE_PROXY || fixed.proxy || ''), token: getToken() };
   const client = new Client(config); const emit = (value) => console.log(JSON.stringify(value, null, args.json ? 0 : 2)); const progress = (value) => { if (!args.json) console.error(`→ ${value}`); };
