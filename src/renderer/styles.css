@@ -24,3 +24,24 @@ main { min-width:0; padding:42px 42px; }.view { max-width:1120px; margin:auto; }
 .toast { position:fixed; left:50%; bottom:26px; transform:translate(-50%,16px); opacity:0; pointer-events:none; background:#142033; color:white; border-radius:8px; padding:10px 15px; box-shadow:0 8px 30px #1018283d; font-size:12px; transition:.2s; }.toast.show { opacity:1; transform:translate(-50%,0); }.toast.error { background:#b42318; }
 .loading-row { padding:70px; text-align:center; color:var(--muted); font-size:13px; }
 @media(max-width:950px){.app-shell{grid-template-columns:205px 1fr}.sidebar{padding-left:12px;padding-right:12px}main{padding:36px 24px}}
+
+.location-prefix { color:#8a94a4; margin-right:2px; }
+.file-row.selected { background:#edf4ff; box-shadow:inset 3px 0 #3470ea; }
+.tree-main { display:flex; align-items:center; min-width:0; padding-left:calc(var(--depth) * 22px); }
+.tree-toggle { width:25px; height:30px; display:grid; place-items:center; flex:none; border:0; padding:0; background:transparent; color:#7b8798; cursor:pointer; }
+.tree-toggle:disabled { cursor:default; }
+.tree-toggle .ui-icon { width:14px; height:14px; transition:transform .15s; }
+.tree-toggle.expanded .ui-icon { transform:rotate(90deg); }
+.tree-kind { width:25px; height:25px; margin:0 9px 0 2px; flex:none; }
+.icon-folder { color:#d69a00; fill:#fff2bf; }
+.icon-file { color:#4d75b8; fill:#edf4ff; }
+.ui-icon { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.ui-icon.icon-folder { fill:#fff2bf; }
+.ui-icon.icon-file { fill:#edf4ff; }
+.tree-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:0; padding:8px 0; background:transparent; color:#243247; text-align:left; font-weight:520; }
+button.tree-label { cursor:pointer; }
+button.tree-label:hover { color:var(--blue); }
+.tree-action { display:flex; align-items:center; gap:5px; border:0; color:var(--blue); background:transparent; cursor:pointer; font-weight:600; font-size:12px; padding:5px 0; }
+.tree-action.danger { color:#c4322b; }
+.tree-action:hover { text-decoration:underline; }
+.tree-loading { height:36px; display:flex; align-items:center; padding-left:calc(48px + var(--depth) * 22px); color:var(--muted); font-size:12px; border-bottom:1px solid #edf0f4; }

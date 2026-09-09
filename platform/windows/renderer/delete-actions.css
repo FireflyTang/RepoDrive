@@ -20,3 +20,18 @@
 .delete {
   color: #c4322b;
 }
+
+.tree-main { display:flex; align-items:center; min-width:0; padding-left:calc(var(--depth) * 22px); }
+.tree-toggle { width:25px; height:30px; display:grid; place-items:center; flex:none; border:0; padding:0; background:transparent; color:#7b8798; }
+.tree-toggle:not(:disabled),button.tree-label { cursor:pointer; }
+.tree-toggle .ui-icon { width:14px; height:14px; transition:transform .15s; }
+.tree-toggle.expanded .ui-icon { transform:rotate(90deg); }
+.tree-kind { width:25px; height:25px; margin:0 9px 0 2px; flex:none; }
+.ui-icon { width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.ui-icon.icon-folder { color:#d69a00; fill:#fff2bf; }
+.ui-icon.icon-file { color:#4d75b8; fill:#edf4ff; }
+.tree-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; border:0; padding:8px 0; background:transparent; color:#243247; text-align:left; font-weight:520; }
+.tree-action { display:flex; align-items:center; gap:5px; border:0; background:transparent; color:var(--blue); font-weight:600; padding:5px 0; cursor:pointer; }
+.tree-action.danger { color:#c4322b; }
+.tree-loading { height:36px; display:flex; align-items:center; padding-left:calc(48px + var(--depth) * 22px); color:var(--muted); font-size:12px; border-bottom:1px solid #edf0f4; }
+.tree-empty { padding:55px 20px; }

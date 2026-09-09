@@ -21,7 +21,7 @@ class GitHubService {
     const headers = {
       Accept: options.accept || 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'RepoDrive/0.1',
+      'User-Agent': 'RepoDrive/0.5',
       ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
       ...(options.headers || {})
     };
