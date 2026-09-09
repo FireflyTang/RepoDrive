@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <title>RepoDrive</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">R</span><div><strong>RepoDrive</strong><small>GitHub 文件盘</small></div></div>
+      <nav>
+        <button class="nav-item active" id="filesNav"><span>▦</span>文件</button>
+        <button class="nav-item" id="settingsNav"><span>⚙</span>连接设置</button>
+      </nav>
+      <div class="connection-card">
+        <span class="status-dot" id="statusDot"></span>
+        <div><small>当前代码仓</small><strong id="repoLabel">尚未连接</strong></div>
+      </div>
+      <div class="platform-note" id="platformNote"></div>
+    </aside>
+
+    <main>
+      <section id="filesView" class="view">
+        <header class="topbar">
+          <div><h1>文件</h1><div class="breadcrumbs" id="breadcrumbs"></div></div>
+          <div class="actions"><button class="button secondary" id="refreshButton">↻ 刷新</button><button class="button secondary upload-action" id="uploadFolderButton">▰ 上传目录</button><button class="button primary upload-action" id="uploadButton">＋ 上传文件</button></div>
+        </header>
+        <div class="notice readonly" id="readonlyNotice">Windows 只读模式 · 可浏览和下载，上传功能已永久禁用</div>
+        <div class="transfer hidden" id="transferBanner"><span class="spinner"></span><div><strong id="transferTitle">正在传输</strong><small id="transferDetail"></small><div class="progress-track"><span id="progressBar"></span></div></div></div>
+        <div class="content-card">
+          <div class="table-head"><span>名称</span><span>大小</span><span>操作</span></div>
+          <div id="fileList" class="file-list"></div>
+          <div id="emptyState" class="empty-state"><div class="empty-icon">☁</div><h2>连接你的 GitHub 代码仓</h2><p>在“连接设置”中填写代码仓和访问令牌，即可像文件盘一样浏览。</p><button class="button primary" id="setupButton">开始设置</button></div>
+        </div>
+      </section>
+
+      <section id="settingsView" class="view hidden">
+        <header class="topbar"><div><h1>连接设置</h1><p>设置文件盘对应的 GitHub 代码仓</p></div></header>
+        <form class="settings-card" id="settingsForm">
+          <div class="field"><label for="repository">代码仓</label><input id="repository" placeholder="owner/repository 或 GitHub 网址" required><small id="repoHint">支持公开和私有代码仓</small></div>
+          <div class="field-row"><div class="field"><label for="branch">分支</label><input id="branch" value="main" required></div><div class="field"><label for="rootPath">根目录（可选）</label><input id="rootPath" placeholder="例如 shared/files"></div></div>
+          <div class="field"><label for="token">Personal Access Token</label><input id="token" type="password" autocomplete="off" placeholder="github_pat_…"><small id="tokenHint">优先自动使用本机 gh 登录；也可填写 Token。私有仓浏览需读权限，上传需读写权限。</small><label class="checkbox hidden" id="clearTokenRow"><input type="checkbox" id="clearToken">清除已保存的 Token</label></div>
+          <div class="divider"></div>
+          <div class="field"><label for="proxy">HTTP/HTTPS 代理（可选）</label><input id="proxy" placeholder="http://127.0.0.1:7890"><small>留空则直接连接；修改后会立即应用到 GitHub 请求。</small></div>
+          <div class="form-actions"><span id="saveStatus"></span><button type="submit" class="button primary" id="saveButton">保存并测试连接</button></div>
+        </form>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

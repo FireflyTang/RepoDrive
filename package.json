@@ -1,0 +1,65 @@
+{
+  "name": "repo-drive",
+  "version": "0.2.0",
+  "description": "Use a GitHub repository as a small cross-platform file drive.",
+  "main": "src/main.js",
+  "bin": {
+    "repodrive": "bin/repodrive.js"
+  },
+  "author": "RepoDrive contributors",
+  "license": "MIT",
+  "files": [
+    "bin",
+    "src",
+    "repodrive.config.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "audit:win": "node scripts/audit-windows-readonly.js",
+    "pack:mac": "electron-builder --mac dmg zip --publish never",
+    "pack:win": "electron-builder --projectDir platform/windows --win nsis portable --x64 --publish never"
+  },
+  "dependencies": {
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "io.repodrive.desktop",
+    "productName": "RepoDrive",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "bin/**/*",
+      "repodrive.config.json",
+      "package.json",
+      "README.md",
+      "LICENSE"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
