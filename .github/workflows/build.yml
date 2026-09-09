@@ -38,6 +38,8 @@ jobs:
       - run: ${{ matrix.command }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - if: runner.os == 'Windows'
+        run: npm run audit:win
       - uses: actions/upload-artifact@v4
         with:
           name: RepoDrive-${{ runner.os }}

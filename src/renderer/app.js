@@ -9,7 +9,7 @@ function showToast(message, error = false) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.className = 'toast'; }, 3200);
 }
 
-function errorMessage(error) { return String(error?.message || error || '操作失败').replace(/^Error invoking remote method '[^']+':\s*(?:[A-Za-z]+Error:\s*)?/, ''); }
+function errorMessage(error) { return String(error?.message || error || '操作失败').replace(/^Error invoking remote method '[^']+':\s*(?:[A-Za-z]*Error:\s*)?/, ''); }
 function formatSize(bytes) { if (!bytes) return '—'; const units=['B','KB','MB','GB']; const i=Math.min(Math.floor(Math.log(bytes)/Math.log(1024)),3); return `${(bytes/1024**i).toFixed(i ? 1 : 0)} ${units[i]}`; }
 function setConnected(value, name) { state.connected=value; $('statusDot').classList.toggle('online',value); $('repoLabel').textContent=name || state.settings?.repository || '尚未连接'; $('refreshButton').disabled=!value; for(const el of document.querySelectorAll('.upload-action')) el.disabled=!value; }
 
@@ -32,8 +32,8 @@ function renderFiles(items) {
     const row=document.createElement('div'); row.className='file-row';
     const name=document.createElement('div'); name.className='file-name'; const icon=document.createElement('span'); icon.className=`file-icon${item.type==='dir'?' folder':''}`; icon.textContent=item.type==='dir'?'▰':'▤'; const label=document.createElement('span'); label.textContent=item.name; name.append(icon,label); if(item.type==='dir') name.onclick=()=>navigate([...state.currentPath.split('/').filter(Boolean),item.name].join('/'));
     const size=document.createElement('span'); size.className='size'; size.textContent=item.type==='dir'?'文件夹':formatSize(item.size);
-    const action=document.createElement('button'); action.className='download-link'; action.textContent='下载'; action.onclick=()=>download(item);
-    row.append(name,size,action); list.append(row);
+    const actions=document.createElement('div'); actions.className='file-actions'; const downloadButton=document.createElement('button'); downloadButton.className='download-link'; downloadButton.textContent='下载'; downloadButton.onclick=()=>download(item); const deleteButton=document.createElement('button'); deleteButton.className='delete-link'; deleteButton.textContent='删除'; deleteButton.onclick=()=>remove(item); actions.append(downloadButton,deleteButton);
+    row.append(name,size,actions); list.append(row);
   }
 }
 
@@ -43,10 +43,11 @@ async function navigate(next) {
 }
 
 async function download(item) { try { showToast(`正在下载 ${item.name}…`); const result=await window.repoDrive.download({ ...item, path:[state.currentPath,item.name].filter(Boolean).join('/') }); if(!result.canceled) showToast('下载完成，已在文件管理器中显示'); } catch(error){ showToast(errorMessage(error),true); } finally { hideTransfer(); } }
+async function remove(item) { try { const result=await window.repoDrive.delete({ ...item, path:[state.currentPath,item.name].filter(Boolean).join('/') }); if(!result.canceled){showToast(`删除完成，共删除 ${result.deleted} 个文件`);await navigate(state.currentPath);} } catch(error){showToast(errorMessage(error),true);} finally { hideTransfer(); } }
 
 function showTransfer(value) {
   const banner=$('transferBanner'); banner.classList.remove('hidden'); banner.classList.toggle('indeterminate',value.kind==='download');
-  $('transferTitle').textContent=value.kind==='upload' ? `正在上传 ${value.completed || 0}/${value.total || 0}` : '正在下载目录';
+  $('transferTitle').textContent=value.kind==='upload' ? `正在上传 ${value.completed || 0}/${value.total || 0}` : value.kind==='delete' ? '正在删除目录' : '正在下载目录';
   $('transferDetail').textContent=value.current || '正在整理文件…';
   $('progressBar').style.width=value.total ? `${Math.round((value.completed || 0)/value.total*100)}%` : '';
 }
@@ -54,9 +55,9 @@ function hideTransfer(){ $('transferBanner').classList.add('hidden'); }
 
 async function init() {
   const [info, saved]=await Promise.all([window.repoDrive.info(),window.repoDrive.getSettings()]); state.canUpload=info.canUpload; state.settings=saved;
-  $('readonlyNotice').classList.toggle('hidden',info.canUpload); $('uploadButton').classList.toggle('hidden',!info.canUpload); $('platformNote').textContent=info.canUpload?`${info.platform === 'linux' ? 'Linux' : 'macOS'} 完整模式 · 可浏览、下载与上传`: 'Windows 只读模式 · 上传在系统层禁用';
+  $('readonlyNotice').classList.toggle('hidden',info.canUpload); $('uploadButton').classList.toggle('hidden',!info.canUpload); $('platformNote').textContent=info.canUpload?`${info.platform === 'linux' ? 'Linux' : 'macOS'} 完整模式 · 可浏览、下载与上传`: 'Windows 无上传模式 · 可浏览、下载与删除';
   $('uploadFolderButton').classList.toggle('hidden',!info.canUpload); setConnected(false);
-  if (!info.canUpload) $('tokenHint').textContent='Windows 只接受 Contents: Read-only 的细粒度 Token；检测到写权限会拒绝连接。';
+  if (!info.canUpload) $('tokenHint').textContent='Windows 浏览/下载可使用只读 Token；删除需要 Contents: Read and write 权限，但客户端仍无法上传。';
   for(const id of ['repository','branch','rootPath','proxy']) $(id).value=saved[id]||'';
   $('clearTokenRow').classList.toggle('hidden',!saved.hasToken); if(saved.hasToken) $('token').placeholder='已安全保存；留空则保持不变';
   if(saved.repository) { try { const repo=await window.repoDrive.connect(); setConnected(true,repo.fullName); await navigate(''); } catch(error){ setConnected(false); showToast(errorMessage(error),true); showView('settings'); } }

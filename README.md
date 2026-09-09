@@ -6,9 +6,9 @@
 
 ## 能力与安全边界
 
-- macOS：桌面客户端支持浏览、下载、上传文件及完整目录；目录保持原层级，不压缩。
+- macOS：桌面客户端支持浏览、下载、上传和删除文件及完整目录；目录保持原层级，不压缩。
 - Linux：CLI 和 Skill 支持浏览、下载与上传；桌面安装包暂未提供。
-- Windows：独立的纯只读构建，只包含浏览、目录/文件下载和设置代码。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或写请求；连接时还会拒绝 GitHub 报告为可写的 Token。
+- Windows：独立的无上传构建，可浏览、下载和删除文件/目录。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或上传请求；删除是唯一允许的远程写操作。
 - macOS、Windows 和 Linux CLI：都可指定 HTTP/HTTPS 代理。
 - Token 使用 Electron `safeStorage` 加密后保存在当前用户的应用数据目录，不会写进代码仓。
 
@@ -20,7 +20,8 @@ RepoDrive 使用 GitHub Contents API，因此单文件不能超过 100 MB。它�
 
 建议创建 fine-grained personal access token，并且只授权目标仓库：
 
-- Windows 浏览/下载：Repository permissions → Contents: Read-only（必须；可写 Token 会被拒绝）
+- Windows 浏览/下载：公开仓可不填 Token，私有仓需要 Contents: Read-only
+- Windows 删除：Repository permissions → Contents: Read and write
 - macOS/Linux 上传：Repository permissions → Contents: Read and write
 
 公开仓库浏览和下载可不填写 Token。macOS 桌面端以及 macOS/Linux CLI 可复用本机 GitHub CLI 登录；否则私有仓库和上传操作必须填写 Token。桌面端填写的 Token 会使用系统安全存储加密。
@@ -57,7 +58,7 @@ npm run pack:mac
 npm run pack:win
 ```
 
-Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工作流；推送 `v*` tag 或手动运行后，会分别在 macOS 与 Windows 官方 runner 上生成安装包。也可运行 `npm run audit:win` 审计成品中的应用文件白名单和写入功能禁令。
+Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工作流；推送 `v*` tag 或手动运行后，会分别在 macOS 与 Windows 官方 runner 上生成安装包。也可运行 `npm run audit:win` 审计成品中的应用文件白名单、上传功能禁令以及仅允许 `DELETE` 的写入边界。
 
 ## 代理
 

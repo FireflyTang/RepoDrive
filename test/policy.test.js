@@ -14,9 +14,10 @@ test('Windows upload calls are rejected', () => {
   assert.throws(() => assertUploadAllowed('win32'), { code: 'UPLOAD_PLATFORM_BLOCKED' });
 });
 
-test('Windows rejects credentials that GitHub reports as writable', () => {
+test('Windows accepts writable credentials for delete while upload remains blocked', () => {
   assert.doesNotThrow(() => assertCredentialPolicy({ pull: true, push: false }, 'win32'));
-  assert.throws(() => assertCredentialPolicy({ pull: true, push: true }, 'win32'), { code: 'WINDOWS_TOKEN_NOT_READONLY' });
+  assert.doesNotThrow(() => assertCredentialPolicy({ pull: true, push: true }, 'win32'));
+  assert.throws(() => assertUploadAllowed('win32'), { code: 'UPLOAD_PLATFORM_BLOCKED' });
   assert.doesNotThrow(() => assertCredentialPolicy({ pull: true, push: true }, 'darwin'));
   assert.doesNotThrow(() => assertCredentialPolicy({ pull: true, push: true }, 'linux'));
 });

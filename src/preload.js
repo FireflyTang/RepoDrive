@@ -10,6 +10,7 @@ const api = {
   connect: () => ipcRenderer.invoke('repo:connect'),
   list: (path) => ipcRenderer.invoke('repo:list', path),
   download: (item) => ipcRenderer.invoke('repo:download', item),
+  delete: (item) => ipcRenderer.invoke('repo:delete', item),
   onTransferProgress: (callback) => {
     const listener = (_event, value) => callback(value);
     ipcRenderer.on('transfer:progress', listener);

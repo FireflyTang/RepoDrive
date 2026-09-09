@@ -1,13 +1,13 @@
 {
-  "name": "repo-drive-readonly-windows",
-  "version": "0.3.0",
-  "description": "Read-only GitHub repository browser and downloader for Windows.",
+  "name": "repo-drive-windows",
+  "version": "0.4.0",
+  "description": "GitHub repository browser, downloader, and deleter for Windows, with no upload capability.",
   "main": "main.js",
   "author": "RepoDrive contributors",
   "license": "MIT",
   "build": {
     "appId": "io.repodrive.readonly",
-    "productName": "RepoDrive ReadOnly",
+    "productName": "RepoDrive Windows",
     "electronVersion": "38.8.6",
     "asar": true,
     "directories": { "output": "../../dist/windows-readonly" },

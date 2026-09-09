@@ -57,6 +57,20 @@ async function downloadTree(repoPath, destination) {
   }
 }
 
+async function deleteTree(repoPath) {
+  const items = await github.list(repoPath);
+  let deleted = 0;
+  for (const item of items) {
+    if (item.type === 'dir') deleted += await deleteTree(item.path);
+    else {
+      mainWindow?.webContents.send('transfer:progress', { kind: 'delete', current: item.path });
+      await github.deleteFile(item.path, item.sha);
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
 async function collectLocalFiles(root, current = root, result = []) {
   for (const entry of await fs.readdir(current, { withFileTypes: true })) {
     if (entry.name === '.git') continue;
@@ -131,6 +145,22 @@ function registerIpc() {
     await fs.writeFile(result.filePath, await github.downloadFile(repoPath));
     shell.showItemInFolder(result.filePath);
     return { path: result.filePath };
+  });
+  ipcMain.handle('repo:delete', async (_event, item) => {
+    const target = scopedPath('', item.path);
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['取消', '删除'],
+      defaultId: 0,
+      cancelId: 0,
+      title: '确认删除',
+      message: `确定要删除“${item.name}”吗？`,
+      detail: item.type === 'dir' ? '目录中的所有文件都会从 GitHub 仓库删除，并产生多个提交。此操作无法在客户端内撤销。' : '文件会从 GitHub 仓库删除并产生一个提交。此操作无法在客户端内撤销。'
+    });
+    if (confirmation.response !== 1) return { canceled: true, deleted: 0 };
+    if (!resolvedConfig().token) throw new Error('删除需要有写权限的 GitHub Token，请先在连接设置中填写。');
+    const deleted = item.type === 'dir' ? await deleteTree(target) : (await github.deleteFile(target, item.sha), 1);
+    return { canceled: false, deleted };
   });
   ipcMain.handle('repo:uploadFiles', async (_event, current) => {
     assertUploadAllowed();

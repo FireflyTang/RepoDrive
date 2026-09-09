@@ -28,7 +28,8 @@ class GitHubService {
     const response = await net.fetch(`https://api.github.com${path}`, {
       method: options.method || 'GET',
       headers,
-      body: options.body ? JSON.stringify(options.body) : undefined
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: 'no-store'
     });
     if (!response.ok) {
       let detail = '';
@@ -89,6 +90,20 @@ class GitHubService {
         content: Buffer.from(bytes).toString('base64'),
         branch: c.branch,
         ...(sha ? { sha } : {})
+      }
+    });
+  }
+
+  async deleteFile(repoPath, sha, message) {
+    const c = this.getConfig();
+    const clean = normalizeRepoPath(repoPath);
+    const encoded = clean.split('/').map(encodeURIComponent).join('/');
+    return this.request(`${this.repoPrefix(c)}/contents/${encoded}`, {
+      method: 'DELETE',
+      body: {
+        message: message || `Delete ${clean} via RepoDrive`,
+        sha,
+        branch: c.branch
       }
     });
   }
