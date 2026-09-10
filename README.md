@@ -60,6 +60,10 @@ npm run pack:mac
 npm run pack:win
 ```
 
+macOS 发布流程会在生成 DMG/ZIP 前封装并校验应用签名，随后重新挂载最终
+DMG 做严格验签。公开构建没有 Apple Developer ID；首次打开时如 macOS 提示
+无法验证开发者，请在 Finder 中右键 RepoDrive，选择“打开”。
+
 Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工作流；推送 `v*` tag 或手动运行后，会分别在 macOS 与 Windows 官方 runner 上生成安装包。也可运行 `npm run audit:win` 审计成品中的应用文件白名单、上传功能禁令以及仅允许 `DELETE` 的写入边界。
 
 ## 代理

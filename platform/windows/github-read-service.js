@@ -7,7 +7,7 @@ class GitHubReadService {
   constructor(getConfig) { this.getConfig = getConfig; }
   async request(apiPath, options = {}) {
     const config = this.getConfig();
-    const headers = { Accept: options.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-Windows/0.5', ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}) };
+    const headers = { Accept: options.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-Windows/0.5.1', ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}) };
     const response = await net.fetch(`https://api.github.com${apiPath}`, { method:options.method||'GET',headers,body:options.body?JSON.stringify(options.body):undefined,cache:'no-store' });
     if (!response.ok) {
       let detail = '';
