@@ -1,6 +1,6 @@
 ---
 name: repo-drive
-description: Browse, download, and upload files or directories in one preconfigured GitHub repository used as a file drive. Use when the user asks to inspect or transfer files in their RepoDrive repository; Windows is strictly read-only.
+description: Browse, download, upload, and rename files or directories in one preconfigured GitHub repository used as a file drive. Use when the user asks to inspect or transfer files in their RepoDrive repository; Windows cannot upload or rename.
 ---
 
 # Repo Drive
@@ -14,6 +14,7 @@ Authentication comes from `REPODRIVE_TOKEN`, or automatically from `gh auth toke
 - Inspect: `scripts/repodrive info --json` or `scripts/repodrive list [remote-path] --json`.
 - Download: `scripts/repodrive download <remote-path> --output <local-path> --json`. Directories retain their hierarchy and are not downloaded as archives. Check whether the destination exists because matching files are replaced.
 - Upload on macOS or Linux: first list the remote parent and obtain user confirmation, then run `scripts/repodrive upload <local-file-or-directory> --path <remote-parent> --json`. Directories retain their name and hierarchy, skip `.git`, and are not compressed.
-- Upload on Windows is forbidden. Do not attempt workarounds, API calls, git pushes, or alternate tools; report that the Windows client and CLI are read-only.
+- Rename on macOS or Linux: first list the remote parent, check that the new name is unused, and obtain user confirmation immediately before running `scripts/repodrive rename <remote-path> <new-name> --json`. The second argument is a name only, not another path. Directory hierarchy is retained.
+- Upload and rename on Windows are forbidden. Do not attempt workarounds, API calls, git pushes, or alternate tools. Windows permits only browsing, downloading, and explicit deletion through its dedicated client.
 
-Report the final local path after downloads. For partial upload failures, report which files completed and stop instead of retrying blindly.
+Report the final local path after downloads. For partial upload or rename failures, report which files completed and stop instead of retrying blindly.

@@ -1,6 +1,6 @@
 {
   "name": "repo-drive-windows",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "GitHub repository browser, downloader, and deleter for Windows, with no upload capability.",
   "main": "main.js",
   "author": "RepoDrive contributors",

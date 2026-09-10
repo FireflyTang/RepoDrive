@@ -1,4 +1,4 @@
 interface:
   display_name: "RepoDrive"
-  short_description: "Browse, download, and safely upload GitHub repository files"
+  short_description: "Browse, transfer, and rename RepoDrive files"
   default_prompt: "Use $repo-drive to browse or transfer files in my configured GitHub repository."

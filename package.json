@@ -1,6 +1,6 @@
 {
   "name": "repo-drive",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Use a GitHub repository as a small cross-platform file drive.",
   "main": "src/main.js",
   "bin": {

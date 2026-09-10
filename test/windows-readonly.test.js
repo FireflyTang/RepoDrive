@@ -20,7 +20,7 @@ test('Windows application source contains no upload implementation', () => {
   const textFiles = files(root).filter((file) => /\.(js|json|html|css)$/.test(file));
   for (const file of textFiles) {
     const content = fs.readFileSync(file, 'utf8');
-    assert.doesNotMatch(content, /repo:upload|uploadFiles|uploadDirectory|uploadFile|method\s*:\s*['"`](?:PUT|POST|PATCH)/i, path.relative(root, file));
+    assert.doesNotMatch(content, /repo:upload|uploadFiles|uploadDirectory|uploadFile|uploadDropped|repo:rename|method\s*:\s*['"`](?:PUT|POST|PATCH)/i, path.relative(root, file));
   }
 });
 

@@ -71,6 +71,61 @@ async function deleteTree(repoPath) {
   return deleted;
 }
 
+async function collectRemoteFiles(repoPath, result = []) {
+  const items = await github.list(repoPath);
+  for (const item of items) {
+    if (item.type === 'dir') await collectRemoteFiles(item.path, result);
+    else result.push(item);
+  }
+  return result;
+}
+
+async function assertRemotePathMissing(repoPath) {
+  try {
+    await github.list(repoPath);
+  } catch (error) {
+    if (error.status === 404) return;
+    throw error;
+  }
+  throw new Error('同一目录下已经存在这个名称，请换一个名称。');
+}
+
+function validateItemName(value) {
+  const name = String(value || '').trim();
+  if (!name) throw new Error('名称不能为空。');
+  if (name === '.' || name === '..' || /[\\/]/.test(name)) throw new Error('名称不能包含斜杠，也不能是 . 或 ..。');
+  if (Buffer.byteLength(name, 'utf8') > 255) throw new Error('名称过长，请控制在 255 字节以内。');
+  return name;
+}
+
+async function renameRemoteItem(item, newName) {
+  const cleanName = validateItemName(newName);
+  if (cleanName === item.name) return { renamed: false, path: item.path, files: 0 };
+  const parent = normalizeRepoPath(item.path).split('/').slice(0, -1).join('/');
+  const oldPath = scopedPath('', item.path);
+  const newUiPath = [parent, cleanName].filter(Boolean).join('/');
+  const newPath = scopedPath('', newUiPath);
+  await assertRemotePathMissing(newPath);
+
+  const files = item.type === 'dir' ? await collectRemoteFiles(oldPath) : [{ path: oldPath, sha: item.sha }];
+  if (!files.length) throw new Error('GitHub 不保存空目录，无法重命名这个目录。');
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const suffix = item.type === 'dir' ? file.path.slice(oldPath.length).replace(/^\//, '') : '';
+    const destination = [newPath, suffix].filter(Boolean).join('/');
+    mainWindow?.webContents.send('transfer:progress', { kind: 'rename', current: file.path, completed: index, total: files.length * 2 });
+    await github.uploadFile(destination, await github.downloadFile(file.path), `Rename ${oldPath} to ${newPath} via RepoDrive`);
+  }
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    mainWindow?.webContents.send('transfer:progress', { kind: 'rename', current: file.path, completed: files.length + index, total: files.length * 2 });
+    await github.deleteFile(file.path, file.sha, `Rename ${oldPath} to ${newPath} via RepoDrive`);
+  }
+  mainWindow?.webContents.send('transfer:progress', { kind: 'rename', completed: files.length * 2, total: files.length * 2 });
+  return { renamed: true, path: newUiPath, files: files.length };
+}
+
 async function collectLocalFiles(root, current = root, result = []) {
   for (const entry of await fs.readdir(current, { withFileTypes: true })) {
     if (entry.name === '.git') continue;
@@ -94,6 +149,26 @@ async function uploadLocalFiles(files, current, prefix = '') {
   }
   mainWindow?.webContents.send('transfer:progress', { kind: 'upload', completed: files.length, total: files.length });
   return uploaded;
+}
+
+async function uploadDroppedPaths(localPaths) {
+  assertUploadAllowed();
+  if (!resolvedConfig().token) throw new Error('上传需要 GitHub Token，请先在连接设置中填写。');
+  const rawPaths = (localPaths || []).filter((value) => typeof value === 'string' && value.trim());
+  if (rawPaths.some((value) => !path.isAbsolute(value))) throw new Error('拖放路径无效。');
+  const paths = [...new Set(rawPaths.map((value) => path.resolve(value)))];
+  if (!paths.length) throw new Error('没有识别到可上传的文件或目录。');
+  const files = [];
+  for (const localPath of paths) {
+    const stat = await fs.stat(localPath);
+    if (stat.isDirectory()) {
+      const nested = await collectLocalFiles(localPath);
+      files.push(...nested.map((file) => ({ ...file, relativePath: [path.basename(localPath), file.relativePath].join('/') })));
+    } else if (stat.isFile()) files.push({ localPath, relativePath: path.basename(localPath) });
+  }
+  if (!files.length) throw new Error('拖入的目录没有可上传文件；GitHub 不保存空目录。');
+  if (files.length > 1000) throw new Error('单次拖放最多上传 1000 个文件，请拆分后重试。');
+  return { canceled: false, uploaded: await uploadLocalFiles(files, ''), destination: '/' };
 }
 
 function registerIpc() {
@@ -162,6 +237,11 @@ function registerIpc() {
     const deleted = item.type === 'dir' ? await deleteTree(target) : (await github.deleteFile(target, item.sha), 1);
     return { canceled: false, deleted };
   });
+  ipcMain.handle('repo:rename', async (_event, item, newName) => {
+    assertUploadAllowed();
+    if (!resolvedConfig().token) throw new Error('重命名需要有写权限的 GitHub Token，请先在连接设置中填写。');
+    return renameRemoteItem(item, newName);
+  });
   ipcMain.handle('repo:uploadFiles', async (_event, current) => {
     assertUploadAllowed();
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] });
@@ -183,6 +263,7 @@ function registerIpc() {
     const uploaded = await uploadLocalFiles(files, current, path.basename(root));
     return { canceled: false, uploaded, directory: path.basename(root) };
   });
+  ipcMain.handle('repo:uploadDropped', (_event, localPaths) => uploadDroppedPaths(localPaths));
 }
 
 function createWindow() {

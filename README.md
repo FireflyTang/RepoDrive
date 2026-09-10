@@ -4,17 +4,17 @@
 
 首次打开时填写一次代码仓、分支和可选根目录，连接成功后会自动保存，以后浏览和传输都无需重复配置。随包的 `repodrive.config.json` 仅用于提供可选初始值，不会锁定设置。不要把访问 Token 写入该文件。
 
-桌面端使用可展开、折叠的目录树显示仓库内容。文件夹和文件使用不同图标，下载与删除操作也有独立图标；macOS 当前选中的目录会作为上传目标并在界面中高亮显示。
+桌面端使用可展开、折叠的目录树显示仓库内容。文件夹和文件使用不同图标，下载、重命名与删除操作也有独立图标；macOS 当前选中的目录会作为按钮上传目标并在界面中高亮显示。把文件或目录拖进整个文件框时，则固定上传到仓库根目录。
 
 ## 能力与安全边界
 
-- macOS：桌面客户端支持浏览、下载、上传和删除文件及完整目录；目录保持原层级，不压缩。
-- Linux：CLI 和 Skill 支持浏览、下载与上传；桌面安装包暂未提供。
+- macOS：桌面客户端支持浏览、下载、上传、重命名和删除文件及完整目录；目录保持原层级，不压缩，并支持拖放到根目录上传。
+- Linux：CLI 和 Skill 支持浏览、下载、上传与重命名；桌面安装包暂未提供。
 - Windows：独立的无上传构建，可浏览、下载和删除文件/目录。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或上传请求；删除是唯一允许的远程写操作。
 - macOS、Windows 和 Linux CLI：都可指定 HTTP/HTTPS 代理。
 - Token 使用 Electron `safeStorage` 加密后保存在当前用户的应用数据目录，不会写进代码仓。
 
-RepoDrive 使用 GitHub Contents API，因此单文件不能超过 100 MB。它适合文档、图片、压缩包和小型项目资料，不适合频繁同步或超大文件。每次上传都会产生一个 Git commit；同名文件会更新。
+RepoDrive 使用 GitHub Contents API，因此单文件不能超过 100 MB。它适合文档、图片、压缩包和小型项目资料，不适合频繁同步或超大文件。每次上传都会产生 Git commit；重命名会复制到新名称后删除旧名称，也会产生提交。
 
 目录上传会跳过 `.git` 文件夹，最多一次上传 1000 个文件。GitHub 本身不保存空目录，因此空目录不会出现在仓库中。目录下载会直接创建文件夹并逐项保存，不生成压缩包。
 
@@ -46,10 +46,11 @@ repodrive configure --repo owner/repository --branch main
 repodrive list
 repodrive download documents --output ./documents
 repodrive upload ./photos --path archive
+repodrive rename archive/photos photos-2026
 repodrive list --json
 ```
 
-也可以不设置 `REPODRIVE_TOKEN`；如本机已通过 GitHub CLI 登录，会自动读取 `gh auth token`。不要把 Token 写进命令参数或脚本。Windows 上 `upload` 命令会在联网前直接拒绝。
+也可以不设置 `REPODRIVE_TOKEN`；如本机已通过 GitHub CLI 登录，会自动读取 `gh auth token`。不要把 Token 写进命令参数或脚本。Windows 上 `upload` 和 `rename` 命令会在联网前直接拒绝。
 
 `skill/repo-drive` 可安装为 Codex Skill。Release 中同时提供 Skill ZIP 和 CLI npm 包；使用可移植 Skill 前，请先全局安装对应的 CLI 包。
 

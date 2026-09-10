@@ -10,7 +10,7 @@ const allowed = new Set([
   '/renderer/app.js', '/renderer/delete-actions.css', '/renderer/index.html', '/renderer/styles.css',
   '/repodrive.config.json', '/settings-store.js', '/validation.js'
 ]);
-const forbidden = /repo:upload|uploadFiles|uploadDirectory|uploadFile|method\s*:\s*['"`](?:PUT|POST|PATCH)/i;
+const forbidden = /repo:upload|uploadFiles|uploadDirectory|uploadFile|uploadDropped|repo:rename|method\s*:\s*['"`](?:PUT|POST|PATCH)/i;
 
 for (const entry of entries) {
   if (!allowed.has(entry)) throw new Error(`Windows 包含白名单外文件: ${entry}`);

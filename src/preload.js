@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const uploadAvailable = process.platform === 'darwin' || process.platform === 'linux';
 
 const api = {
@@ -22,6 +22,9 @@ const api = {
 if (uploadAvailable) {
   api.uploadFiles = (path) => ipcRenderer.invoke('repo:uploadFiles', path);
   api.uploadDirectory = (path) => ipcRenderer.invoke('repo:uploadDirectory', path);
+  api.getPathForFile = (file) => webUtils.getPathForFile(file);
+  api.uploadDropped = (paths) => ipcRenderer.invoke('repo:uploadDropped', paths);
+  api.rename = (item, newName) => ipcRenderer.invoke('repo:rename', item, newName);
 }
 
 contextBridge.exposeInMainWorld('repoDrive', Object.freeze(api));

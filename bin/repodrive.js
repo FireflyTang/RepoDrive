@@ -17,6 +17,7 @@ function usage() {
   repodrive list [远程路径] [选项]
   repodrive download <远程路径> --output <本地路径> [选项]
   repodrive upload <本地文件或目录> [--path <远程父目录>] [选项]
+  repodrive rename <远程路径> <新名称> [选项]
   repodrive info [选项]
   repodrive configure --repo owner/repo [选项]
 
@@ -26,11 +27,11 @@ function usage() {
   --branch main           分支（默认 main）
   --root shared/files     仓库内根目录
   --proxy http://host:port  HTTP/HTTPS 代理
-  --message 文本          上传提交说明
+  --message 文本          上传或重命名提交说明
   --json                  输出机器可读 JSON
 
 认证顺序: REPODRIVE_TOKEN 环境变量，其次读取 gh CLI 当前登录 Token。
-Windows 只允许 list、download 和 info，upload 会在联网前被拒绝。`);
+Windows 只允许 list、download 和 info，upload 和 rename 会在联网前被拒绝。`);
 }
 
 function parseArgs(argv) {
@@ -91,11 +92,18 @@ async function saveConfiguration(args, current) {
 
 function joinRepoPath(...parts) { return parts.map(normalizeRepoPath).filter(Boolean).join('/'); }
 function encodePath(value) { return value.split('/').filter(Boolean).map(encodeURIComponent).join('/'); }
+function validateItemName(value) {
+  const name = String(value || '').trim();
+  if (!name) throw new Error('新名称不能为空');
+  if (name === '.' || name === '..' || /[\\/]/.test(name)) throw new Error('新名称不能包含斜杠，也不能是 . 或 ..');
+  if (Buffer.byteLength(name, 'utf8') > 255) throw new Error('新名称过长，请控制在 255 字节以内');
+  return name;
+}
 
 class Client {
   constructor(config) { this.config = config; this.dispatcher = config.proxy ? new ProxyAgent(config.proxy) : undefined; }
   async request(apiPath, options = {}) {
-    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.5.1' };
+    const headers = { Accept: options.accept || 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-CLI/0.6' };
     if (this.config.token) headers.Authorization = `Bearer ${this.config.token}`;
     const response = await fetch(`https://api.github.com${apiPath}`, { method: options.method || 'GET', headers, body: options.body ? JSON.stringify(options.body) : undefined, dispatcher: this.dispatcher });
     if (!response.ok) {
@@ -114,10 +122,17 @@ class Client {
     return (Array.isArray(value) ? value : [value]).map(({ name, path: itemPath, type, size, sha }) => ({ name, path: itemPath, type, size, sha })).sort((a,b)=>(a.type===b.type?a.name.localeCompare(b.name):a.type==='dir'?-1:1));
   }
   async raw(remotePath) { return this.request(`${this.prefix()}/contents/${encodePath(remotePath)}?ref=${encodeURIComponent(this.config.branch)}`, { accept: 'application/vnd.github.raw+json', raw: true }); }
+  async exists(remotePath) {
+    try { await this.request(`${this.prefix()}/contents/${encodePath(remotePath)}?ref=${encodeURIComponent(this.config.branch)}`); return true; }
+    catch (error) { if (error.status === 404) return false; throw error; }
+  }
   async upload(remotePath, bytes, message) {
     let sha;
     try { sha = (await this.request(`${this.prefix()}/contents/${encodePath(remotePath)}?ref=${encodeURIComponent(this.config.branch)}`)).sha; } catch (error) { if (error.status !== 404) throw error; }
     return this.request(`${this.prefix()}/contents/${encodePath(remotePath)}`, { method: 'PUT', body: { message: message || `Upload ${remotePath} via RepoDrive CLI`, content: Buffer.from(bytes).toString('base64'), branch: this.config.branch, ...(sha ? { sha } : {}) } });
+  }
+  async delete(remotePath, sha, message) {
+    return this.request(`${this.prefix()}/contents/${encodePath(remotePath)}`, { method: 'DELETE', body: { message: message || `Rename ${remotePath} via RepoDrive CLI`, sha, branch: this.config.branch } });
   }
   close() { return this.dispatcher?.close(); }
 }
@@ -137,6 +152,14 @@ async function collectFiles(root, current = root, result = []) {
     const localPath = path.join(current, entry.name);
     if (entry.isDirectory()) await collectFiles(root, localPath, result);
     else if (entry.isFile()) result.push({ localPath, relative: path.relative(root, localPath).split(path.sep).join('/') });
+  }
+  return result;
+}
+
+async function collectRemoteFiles(client, remotePath, result = []) {
+  for (const item of await client.list(remotePath)) {
+    if (item.type === 'dir') await collectRemoteFiles(client, item.path, result);
+    else result.push(item);
   }
   return result;
 }
@@ -176,6 +199,30 @@ async function main() {
       const repo = await client.info(); assertCredentialPolicy(repo.permissions || {});
       for (let i=0;i<files.length;i+=1) { const file=files[i]; const size=(await fs.stat(file.localPath)).size; if(size>100*1024*1024) throw new Error(`${file.relative} 超过 100 MB`); progress(`${i+1}/${files.length} ${file.remote}`); await client.upload(file.remote, await fs.readFile(file.localPath), args.message); }
       emit({ uploaded: files.length, destination: parent || '/', paths: files.map((file)=>file.remote) });
+    } else if (command === 'rename') {
+      assertUploadAllowed();
+      const requested = args._[1]; if (!requested) throw new Error('rename 需要远程路径');
+      const newName = validateItemName(args._[2]);
+      const remote = joinRepoPath(config.root, requested);
+      const listing = await client.list(remote);
+      const direct = listing.length === 1 && listing[0].path === remote ? listing[0] : { name: path.posix.basename(remote), path: remote, type: 'dir' };
+      if (newName === direct.name) return emit({ renamed: false, from: requested, to: requested, files: 0 });
+      const destination = joinRepoPath(path.posix.dirname(remote) === '.' ? '' : path.posix.dirname(remote), newName);
+      if (await client.exists(destination)) throw new Error('同一目录下已经存在这个名称');
+      const repo = await client.info(); assertCredentialPolicy(repo.permissions || {});
+      const remoteFiles = direct.type === 'dir' ? await collectRemoteFiles(client, remote) : [direct];
+      if (!remoteFiles.length) throw new Error('GitHub 不保存空目录，无法重命名这个目录');
+      for (let i=0;i<remoteFiles.length;i+=1) {
+        const file = remoteFiles[i]; const suffix = direct.type === 'dir' ? file.path.slice(remote.length).replace(/^\//, '') : '';
+        const target = joinRepoPath(destination, suffix); progress(`${i+1}/${remoteFiles.length * 2} ${target}`);
+        await client.upload(target, await client.raw(file.path), args.message || `Rename ${remote} to ${destination} via RepoDrive CLI`);
+      }
+      for (let i=0;i<remoteFiles.length;i+=1) {
+        const file = remoteFiles[i]; progress(`${remoteFiles.length+i+1}/${remoteFiles.length * 2} ${file.path}`);
+        await client.delete(file.path, file.sha, args.message || `Rename ${remote} to ${destination} via RepoDrive CLI`);
+      }
+      const visibleDestination = config.root && destination.startsWith(`${config.root}/`) ? destination.slice(config.root.length + 1) : destination;
+      emit({ renamed: true, from: requested, to: visibleDestination, files: remoteFiles.length });
     } else throw new Error(`未知命令: ${command}`);
   } finally { await client.close(); }
 }
