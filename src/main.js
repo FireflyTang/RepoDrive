@@ -3,19 +3,14 @@
 const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 const settings = require('./settings-store');
 const { GitHubService } = require('./github-service');
+const { localGitHubToken } = require('./local-gh-auth');
 const { canUpload, assertUploadAllowed, assertCredentialPolicy } = require('./platform-policy');
 const { normalizeRepoPath, parseRepository, validateBranch, validateProxy } = require('./validation');
 
 let mainWindow;
 let runtimeConfig = null;
-
-function localGitHubToken() {
-  if (process.platform !== 'darwin') return '';
-  try { return execFileSync('gh', ['auth', 'token'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return ''; }
-}
 
 function resolvedConfig() {
   const stored = settings.getPublic();
