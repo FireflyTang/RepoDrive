@@ -24,6 +24,9 @@ if (uploadAvailable) {
   api.uploadDirectory = (path) => ipcRenderer.invoke('repo:uploadDirectory', path);
   api.getPathForFile = (file) => webUtils.getPathForFile(file);
   api.uploadDropped = (paths) => ipcRenderer.invoke('repo:uploadDropped', paths);
+  api.uploadClipboard = (path) => ipcRenderer.invoke('repo:uploadClipboard', path);
+  api.deleteBatch = (items) => ipcRenderer.invoke('repo:deleteBatch', items);
+  api.clearHistory = (repository) => ipcRenderer.invoke('repo:clearHistory', repository);
   api.rename = (item, newName) => ipcRenderer.invoke('repo:rename', item, newName);
 }
 

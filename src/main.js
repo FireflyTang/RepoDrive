@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, session, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const settings = require('./settings-store');
@@ -30,7 +30,7 @@ async function validateRepositoryAccess() {
 }
 
 async function applyProxy(proxy) {
-  await session.defaultSession.setProxy(proxy ? { proxyRules: proxy } : { mode: 'direct' });
+  await session.defaultSession.setProxy(proxy ? { proxyRules: proxy } : { mode: 'system' });
   await session.defaultSession.closeAllConnections();
 }
 
@@ -131,19 +131,20 @@ async function collectLocalFiles(root, current = root, result = []) {
   return result;
 }
 
-async function uploadLocalFiles(files, current, prefix = '') {
-  const uploaded = [];
+async function uploadLocalFiles(files, current, prefix = '', message = '') {
+  const changes = [];
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
     const stat = await fs.stat(file.localPath);
     if (stat.size > 100 * 1024 * 1024) throw new Error(`${file.relativePath} 超过 GitHub 单文件 100 MB 限制。`);
     const relative = [prefix, file.relativePath].filter(Boolean).join('/');
     mainWindow?.webContents.send('transfer:progress', { kind: 'upload', current: relative, completed: index, total: files.length });
-    await github.uploadFile(scopedPath(current, relative), await fs.readFile(file.localPath));
-    uploaded.push(relative);
+    changes.push({ path: scopedPath(current, relative), bytes: await fs.readFile(file.localPath) });
   }
-  mainWindow?.webContents.send('transfer:progress', { kind: 'upload', completed: files.length, total: files.length });
-  return uploaded;
+  await github.commitChanges(changes, message || `Upload ${files.length} item${files.length === 1 ? '' : 's'} via RepoDrive`, (progress) => {
+    mainWindow?.webContents.send('transfer:progress', { kind: 'upload', ...progress });
+  });
+  return files.map((file) => [prefix, file.relativePath].filter(Boolean).join('/'));
 }
 
 async function uploadDroppedPaths(localPaths) {
@@ -164,6 +165,47 @@ async function uploadDroppedPaths(localPaths) {
   if (!files.length) throw new Error('拖入的目录没有可上传文件；GitHub 不保存空目录。');
   if (files.length > 1000) throw new Error('单次拖放最多上传 1000 个文件，请拆分后重试。');
   return { canceled: false, uploaded: await uploadLocalFiles(files, ''), destination: '/' };
+}
+
+function clipboardFileName(extension) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').replace(/\.(\d{3})Z$/, '-$1');
+  return `clipboard-${stamp}.${extension}`;
+}
+
+async function uploadClipboard(current) {
+  assertUploadAllowed();
+  if (!resolvedConfig().token) throw new Error('上传需要 GitHub 写权限。请先运行 gh auth login，或在连接设置中填写 Token。');
+  const image = clipboard.readImage();
+  let name;
+  let bytes;
+  let kind;
+  if (!image.isEmpty()) {
+    name = clipboardFileName('png'); bytes = image.toPNG(); kind = '图片';
+  } else {
+    const value = clipboard.readText();
+    if (!value) throw new Error('剪贴板中没有可上传的图片或文字。');
+    name = clipboardFileName('txt'); bytes = Buffer.from(value, 'utf8'); kind = '文字';
+  }
+  const remotePath = scopedPath(current, name);
+  await github.commitChanges([{ path: remotePath, bytes }], `Upload clipboard ${kind} via RepoDrive`, (progress) => {
+    mainWindow?.webContents.send('transfer:progress', { kind: 'upload', ...progress });
+  });
+  return { name, kind, path: remotePath };
+}
+
+function collapseSelectedItems(items) {
+  const sorted = [...items].sort((a, b) => a.path.split('/').length - b.path.split('/').length);
+  return sorted.filter((item, index) => !sorted.some((parent, parentIndex) => parentIndex < index && item.path.startsWith(`${parent.path}/`)));
+}
+
+async function collectDeleteChanges(items) {
+  const paths = new Set();
+  for (const item of collapseSelectedItems(items)) {
+    const target = scopedPath('', item.path);
+    if (item.type === 'dir') for (const file of await collectRemoteFiles(target)) paths.add(file.path);
+    else paths.add(target);
+  }
+  return [...paths].map((filePath) => ({ path: filePath, delete: true }));
 }
 
 function registerIpc() {
@@ -217,7 +259,6 @@ function registerIpc() {
     return { path: result.filePath };
   });
   ipcMain.handle('repo:delete', async (_event, item) => {
-    const target = scopedPath('', item.path);
     const confirmation = await dialog.showMessageBox(mainWindow, {
       type: 'warning',
       buttons: ['取消', '删除'],
@@ -225,12 +266,29 @@ function registerIpc() {
       cancelId: 0,
       title: '确认删除',
       message: `确定要删除“${item.name}”吗？`,
-      detail: item.type === 'dir' ? '目录中的所有文件都会从 GitHub 仓库删除，并产生多个提交。此操作无法在客户端内撤销。' : '文件会从 GitHub 仓库删除并产生一个提交。此操作无法在客户端内撤销。'
+      detail: item.type === 'dir' ? '目录中的所有文件都会从 GitHub 仓库删除，并合并为一个提交。此操作无法在客户端内撤销。' : '文件会从 GitHub 仓库删除并产生一个提交。此操作无法在客户端内撤销。'
     });
     if (confirmation.response !== 1) return { canceled: true, deleted: 0 };
     if (!resolvedConfig().token) throw new Error('删除需要有写权限的 GitHub Token，请先在连接设置中填写。');
-    const deleted = item.type === 'dir' ? await deleteTree(target) : (await github.deleteFile(target, item.sha), 1);
-    return { canceled: false, deleted };
+    const changes = await collectDeleteChanges([{ ...item, path: item.path }]);
+    if (!changes.length) throw new Error('所选目录中没有可删除的文件。');
+    await github.commitChanges(changes, `Delete ${item.path} via RepoDrive`, (progress) => mainWindow?.webContents.send('transfer:progress', { kind: 'delete', ...progress }));
+    return { canceled: false, deleted: changes.length };
+  });
+  ipcMain.handle('repo:deleteBatch', async (_event, items) => {
+    assertUploadAllowed();
+    if (!resolvedConfig().token) throw new Error('批量删除需要 GitHub 写权限。');
+    if (!Array.isArray(items) || !items.length || items.length > 1000) throw new Error('请选择 1 到 1000 个项目。');
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['取消', '批量删除'], defaultId: 0, cancelId: 0,
+      title: '确认批量删除', message: `确定要删除选中的 ${items.length} 个项目吗？`,
+      detail: '目录中的文件也会被删除。所有删除会合并为一个 GitHub 提交，客户端内无法撤销。'
+    });
+    if (confirmation.response !== 1) return { canceled: true, deleted: 0 };
+    const changes = await collectDeleteChanges(items);
+    if (!changes.length) throw new Error('所选项目中没有可删除的文件。');
+    await github.commitChanges(changes, `Delete ${items.length} selected items via RepoDrive`, (progress) => mainWindow?.webContents.send('transfer:progress', { kind: 'delete', ...progress }));
+    return { canceled: false, deleted: changes.length };
   });
   ipcMain.handle('repo:rename', async (_event, item, newName) => {
     assertUploadAllowed();
@@ -259,6 +317,21 @@ function registerIpc() {
     return { canceled: false, uploaded, directory: path.basename(root) };
   });
   ipcMain.handle('repo:uploadDropped', (_event, localPaths) => uploadDroppedPaths(localPaths));
+  ipcMain.handle('repo:uploadClipboard', (_event, current) => uploadClipboard(current));
+  ipcMain.handle('repo:clearHistory', async (_event, repositoryConfirmation) => {
+    assertUploadAllowed();
+    const c = resolvedConfig();
+    const expected = `${c.owner}/${c.repo}`;
+    if (repositoryConfirmation !== expected) throw new Error(`请输入完整代码仓名称 ${expected} 以确认。`);
+    if (!c.token) throw new Error('清空历史需要 GitHub 写权限。');
+    const confirmation = await dialog.showMessageBox(mainWindow, {
+      type: 'warning', buttons: ['取消', '清空历史'], defaultId: 0, cancelId: 0,
+      title: '最后确认', message: `重写 ${expected} 的 ${c.branch} 分支历史？`,
+      detail: '当前文件会保留，但现有提交历史将从该分支移除。受保护分支可能拒绝此操作。'
+    });
+    if (confirmation.response !== 1) return { canceled: true };
+    return { canceled: false, ...(await github.clearBranchHistory('Reset branch history via RepoDrive')) };
+  });
 }
 
 function createWindow() {

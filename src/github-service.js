@@ -21,16 +21,23 @@ class GitHubService {
     const headers = {
       Accept: options.accept || 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'RepoDrive/0.6',
+      'User-Agent': 'RepoDrive/0.7',
       ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
       ...(options.headers || {})
     };
-    const response = await net.fetch(`https://api.github.com${path}`, {
-      method: options.method || 'GET',
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
-      cache: 'no-store'
-    });
+    let response;
+    try {
+      response = await net.fetch(`https://api.github.com${path}`, {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        cache: 'no-store',
+        signal: AbortSignal.timeout(30000)
+      });
+    } catch (error) {
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      throw new GitHubError(timedOut ? 'GitHub 请求超过 30 秒，请检查系统网络或代理设置' : '无法连接 GitHub，请检查系统网络或代理设置');
+    }
     if (!response.ok) {
       let detail = '';
       try { detail = (await response.json()).message || ''; } catch { detail = await response.text(); }
@@ -106,6 +113,66 @@ class GitHubService {
         branch: c.branch
       }
     });
+  }
+
+  async branchHead() {
+    const c = this.getConfig();
+    const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
+    const ref = await this.request(`${this.repoPrefix(c)}/git/ref/heads/${branchRef}`);
+    const commit = await this.request(`${this.repoPrefix(c)}/git/commits/${encodeURIComponent(ref.object.sha)}`);
+    return { commitSha: ref.object.sha, treeSha: commit.tree.sha };
+  }
+
+  async commitChanges(changes, message, onProgress) {
+    const c = this.getConfig();
+    if (!Array.isArray(changes) || !changes.length) throw new Error('没有需要提交的文件变更。');
+    const seen = new Set();
+    const normalized = changes.map((change) => {
+      const clean = normalizeRepoPath(change.path);
+      if (!clean) throw new Error('不能直接替换代码仓根目录。');
+      if (seen.has(clean)) throw new Error(`同一次操作中存在重复路径：${clean}`);
+      seen.add(clean);
+      return { ...change, path: clean };
+    });
+    const head = await this.branchHead();
+    const tree = [];
+    let completed = 0;
+    for (const change of normalized) {
+      if (change.delete) tree.push({ path: change.path, mode: '100644', type: 'blob', sha: null });
+      else {
+        const blob = await this.request(`${this.repoPrefix(c)}/git/blobs`, {
+          method: 'POST',
+          body: { content: Buffer.from(change.bytes).toString('base64'), encoding: 'base64' }
+        });
+        tree.push({ path: change.path, mode: '100644', type: 'blob', sha: blob.sha });
+      }
+      completed += 1;
+      onProgress?.({ completed, total: normalized.length, current: change.path });
+    }
+    const nextTree = await this.request(`${this.repoPrefix(c)}/git/trees`, {
+      method: 'POST', body: { base_tree: head.treeSha, tree }
+    });
+    const commit = await this.request(`${this.repoPrefix(c)}/git/commits`, {
+      method: 'POST', body: { message, tree: nextTree.sha, parents: [head.commitSha] }
+    });
+    const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
+    await this.request(`${this.repoPrefix(c)}/git/refs/heads/${branchRef}`, {
+      method: 'PATCH', body: { sha: commit.sha, force: false }
+    });
+    return { commitSha: commit.sha, changed: normalized.length };
+  }
+
+  async clearBranchHistory(message = 'Reset history via RepoDrive') {
+    const c = this.getConfig();
+    const head = await this.branchHead();
+    const commit = await this.request(`${this.repoPrefix(c)}/git/commits`, {
+      method: 'POST', body: { message, tree: head.treeSha, parents: [] }
+    });
+    const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
+    await this.request(`${this.repoPrefix(c)}/git/refs/heads/${branchRef}`, {
+      method: 'PATCH', body: { sha: commit.sha, force: true }
+    });
+    return { previousCommitSha: head.commitSha, commitSha: commit.sha };
   }
 }
 
