@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 const { ghCandidates, localGitHubToken } = require('../src/local-gh-auth');
 
 test('macOS checks Homebrew paths even when Finder PATH does not contain them', () => {
@@ -42,7 +43,7 @@ for (const platform of ['darwin', 'linux']) {
       platform,
       env: { HOME: '/Users/example', PATH: '/usr/bin:/bin' },
       execFileSync(executable) {
-        if (executable === '/Users/example/.local/bin/gh') return 'user-local-auth\n';
+        if (executable === path.join('/Users/example', '.local', 'bin', 'gh')) return 'user-local-auth\n';
         throw new Error('not found');
       }
     });
