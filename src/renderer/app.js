@@ -82,7 +82,7 @@ function appendNodes(parentPath, depth, fragment) {
     if (item.type === 'dir') { toggle.append(icon('chevron')); toggle.onclick = () => toggleDirectory(item); } else toggle.disabled = true;
     const itemIcon = icon(item.type === 'dir' ? 'folder' : 'file'); itemIcon.classList.add('tree-kind');
     const label = document.createElement(item.type === 'dir' ? 'button' : 'span'); label.className = 'tree-label'; label.textContent = item.name; if (item.type === 'dir') label.onclick = () => toggleDirectory(item);
-    main.append(checkbox, toggle, itemIcon, label);
+    main.append(checkbox, toggle, itemIcon, datedLabel(item, label));
     const size = document.createElement('span'); size.className = 'size'; size.textContent = item.type === 'dir' ? '文件夹' : formatSize(item.size);
     const actions = document.createElement('div'); actions.className = 'file-actions';
     if (state.canUpload) actions.append(actionButton('rename', '重命名', () => openRename(item)));
@@ -159,7 +159,7 @@ function hideTransfer() { $('transferBanner').classList.add('hidden'); }
 
 async function init() {
   const [info, saved] = await Promise.all([window.repoDrive.info(), window.repoDrive.getSettings()]); state.canUpload = info.canUpload; state.settings = saved;
-  $('readonlyNotice').classList.toggle('hidden', info.canUpload); $('uploadButton').classList.toggle('hidden', !info.canUpload); $('uploadFolderButton').classList.toggle('hidden', !info.canUpload); $('pasteButton').classList.toggle('hidden', !info.canUpload); $('dangerCard').classList.toggle('hidden', !info.canUpload);
+  $('readonlyNotice').classList.toggle('hidden', info.canUpload); $('uploadButton').classList.toggle('hidden', !info.canUpload); $('uploadFolderButton').classList.toggle('hidden', !info.canUpload); $('pasteButton').classList.toggle('hidden', !info.canUpload);
   $('platformNote').textContent = info.canUpload ? `${info.platform === 'linux' ? 'Linux' : 'macOS'} 完整模式 · 支持批量提交、粘贴与历史重置` : 'Windows 无上传模式 · 可浏览、下载与删除';
   setConnected(false); renderLocation();
   if (!info.canUpload) $('tokenHint').textContent = 'Windows 浏览/下载可使用只读 Token；删除需要 Contents: Read and write 权限，但客户端仍无法上传。';
@@ -188,15 +188,6 @@ document.addEventListener('paste', (event) => {
 $('renameForm').onsubmit = submitRename;
 $('renameCancel').onclick = () => { $('renameDialog').close(); renameTarget = null; };
 $('renameDialog').addEventListener('cancel', () => { renameTarget = null; });
-$('clearHistoryButton').onclick = () => { const repository = state.settings?.repository || ''; $('clearHistoryRepo').textContent = repository; $('clearHistoryInput').value = ''; $('clearHistoryDialog').showModal(); $('clearHistoryInput').focus(); };
-$('clearHistoryCancel').onclick = () => $('clearHistoryDialog').close();
-$('clearHistoryForm').onsubmit = async (event) => {
-  event.preventDefault(); $('clearHistorySubmit').disabled = true;
-  try { const result = await window.repoDrive.clearHistory($('clearHistoryInput').value.trim()); if (!result.canceled) { $('clearHistoryDialog').close(); showToast('历史记录已清空，当前文件保持不变'); await refreshTree(); } }
-  catch (error) { showToast(errorMessage(error), true); }
-  finally { $('clearHistorySubmit').disabled = false; }
-};
-
 const dropZone = $('dropZone');
 for (const eventName of ['dragenter', 'dragover', 'dragleave', 'drop']) {
   dropZone.addEventListener(eventName, (event) => { event.preventDefault(); event.stopPropagation(); });
@@ -220,3 +211,10 @@ $('settingsForm').onsubmit = async (event) => { event.preventDefault(); $('saveB
 
 init().catch((error) => showToast(errorMessage(error), true));
 window.repoDrive.onTransferProgress(showTransfer);
+
+function datedLabel(item, label) {
+  const caption = document.createElement('div'); caption.className = 'tree-caption';
+  const date = document.createElement('small'); date.className = 'file-date';
+  date.textContent = item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '时间未知';
+  date.title = '最近上传 / 更新（最后提交时间）'; caption.append(label, date); return caption;
+}

@@ -10,7 +10,7 @@
 
 - macOS：桌面客户端支持浏览、下载、上传、重命名和删除文件及完整目录；目录保持原层级，不压缩，并支持拖放到根目录上传。
 - Linux：CLI 和 Skill 支持浏览、下载、上传与重命名；桌面安装包暂未提供。
-- Windows：独立的无上传构建，可浏览、下载和删除文件/目录。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或上传请求；删除是唯一允许的远程写操作。
+- Windows：独立的无上传构建，可浏览、下载、删除、清空文件和清除历史。安装包不包含 macOS 主程序、CLI、上传界面、上传处理器或上传请求。
 - macOS、Windows 和 Linux CLI：都可指定 HTTP/HTTPS 代理。
 - Token 使用 Electron `safeStorage` 加密后保存在当前用户的应用数据目录，不会写进代码仓。
 
@@ -69,7 +69,7 @@ macOS 发布流程会在生成 DMG/ZIP 前封装并校验应用签名，随后�
 DMG 做严格验签。公开构建没有 Apple Developer ID；首次打开时如 macOS 提示
 无法验证开发者，请在 Finder 中右键 RepoDrive，选择“打开”。
 
-Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工作流；推送 `v*` tag 或手动运行后，会分别在 macOS 与 Windows 官方 runner 上生成安装包。也可运行 `npm run audit:win` 审计成品中的应用文件白名单、上传功能禁令以及仅允许 `DELETE` 的写入边界。
+Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工作流；推送 `v*` tag 或手动运行后，会分别在 macOS 与 Windows 官方 runner 上生成安装包。也可运行 `npm run audit:win` 审计成品中的文件白名单、上传功能禁令和仅允许删除及限定清理操作的请求策略。
 
 ## 代理
 
@@ -78,3 +78,12 @@ Windows 安装包应当在 Windows 上构建。仓库附带 GitHub Actions 工�
 ## 开发安全说明
 
 Renderer 开启 context isolation 和 sandbox，并使用 Content Security Policy。所有 GitHub 请求、文件选择和本地写入都在主进程中执行。
+
+## 排序与仓库清理
+
+两端 GUI 在每一级目录内按最近上传/更新时间倒序显示，时间采用该路径最后一次提交的时间，同时间按名称排序。GitHub 不提供独立上传时间；每个路径首次加载需要额外查询提交记录，按分支快照缓存并限制并发。
+
+- **清空全部文件**：删除已配置根目录内全部内容（根目录留空则清空当前分支），保留范围外文件，生成一个普通提交。旧内容仍在历史中。
+- **清除历史（force push）**：保留当前文件，将整个当前分支重写为一个根提交；不受根目录设置限制。清除后旧上传时间无法保留。
+
+两项操作都要求输入完整仓库名并再次确认，需要 Contents 写权限。历史重置可能被分支保护拒绝。请暂停其他人的推送；应用会检查分支是否变化，但 GitHub REST force 更新没有原子 force-with-lease 条件。其他分支、标签或 PR 可能引用旧对象，GitHub 不保证立即回收空间。

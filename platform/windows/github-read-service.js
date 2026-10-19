@@ -7,6 +7,7 @@ class GitHubReadService {
   constructor(getConfig) { this.getConfig = getConfig; }
   async request(apiPath, options = {}) {
     const config = this.getConfig();
+    require('./windows-request-policy').assertWindowsRequest(apiPath, options, config);
     const headers = { Accept: options.raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'RepoDrive-Windows/0.6', ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}) };
     const response = await net.fetch(`https://api.github.com${apiPath}`, { method:options.method||'GET',headers,body:options.body?JSON.stringify(options.body):undefined,cache:'no-store' });
     if (!response.ok) {
@@ -27,6 +28,7 @@ class GitHubReadService {
     const value=await this.request(`${this.prefix()}/contents${suffix}?ref=${encodeURIComponent(c.branch)}`); const rows=Array.isArray(value)?value:[value];
     return rows.map(({name,path,type,size,sha})=>({name,path,type,size,sha})).sort((a,b)=>(a.type===b.type?a.name.localeCompare(b.name):a.type==='dir'?-1:1));
   }
+  async listRecent(remotePath = '') { return require('./file-history').listByRecentCommit(this, remotePath); }
   async readFile(remotePath) { const c=this.getConfig(); const encoded=normalizeRepoPath(remotePath).split('/').map(encodeURIComponent).join('/'); return this.request(`${this.prefix()}/contents/${encoded}?ref=${encodeURIComponent(c.branch)}`,{raw:true}); }
   async deleteFile(remotePath,sha){const c=this.getConfig();const clean=normalizeRepoPath(remotePath);const encoded=clean.split('/').map(encodeURIComponent).join('/');return this.request(`${this.prefix()}/contents/${encoded}`,{method:'DELETE',body:{message:`Delete ${clean} via RepoDrive`,sha,branch:c.branch}});}
 }

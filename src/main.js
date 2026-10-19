@@ -241,7 +241,7 @@ function registerIpc() {
     await applyProxy(c.proxy);
     return validateRepositoryAccess();
   });
-  ipcMain.handle('repo:list', (_event, current) => github.list(scopedPath(current)));
+  ipcMain.handle('repo:list', (_event, current) => github.listRecent(scopedPath(current)));
   ipcMain.handle('repo:download', async (_event, item) => {
     const repoPath = scopedPath('', item.path);
     if (item.type === 'dir') {
@@ -318,26 +318,14 @@ function registerIpc() {
   });
   ipcMain.handle('repo:uploadDropped', (_event, localPaths) => uploadDroppedPaths(localPaths));
   ipcMain.handle('repo:uploadClipboard', (_event, current) => uploadClipboard(current));
-  ipcMain.handle('repo:clearHistory', async (_event, repositoryConfirmation) => {
-    assertUploadAllowed();
-    const c = resolvedConfig();
-    const expected = `${c.owner}/${c.repo}`;
-    if (repositoryConfirmation !== expected) throw new Error(`请输入完整代码仓名称 ${expected} 以确认。`);
-    if (!c.token) throw new Error('清空历史需要 GitHub 写权限。');
-    const confirmation = await dialog.showMessageBox(mainWindow, {
-      type: 'warning', buttons: ['取消', '清空历史'], defaultId: 0, cancelId: 0,
-      title: '最后确认', message: `重写 ${expected} 的 ${c.branch} 分支历史？`,
-      detail: '当前文件会保留，但现有提交历史将从该分支移除。受保护分支可能拒绝此操作。'
-    });
-    if (confirmation.response !== 1) return { canceled: true };
-    return { canceled: false, ...(await github.clearBranchHistory('Reset branch history via RepoDrive')) };
-  });
+  require('./repository-maintenance').registerMaintenance({ ipcMain, dialog, getWindow: () => mainWindow, getConfig: resolvedConfig, createService: (config) => new GitHubService(() => config) });
 }
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180, height: 760, minWidth: 900, minHeight: 600,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    // Keep the native title bar so window dragging works without HTML drag regions.
+    titleBarStyle: 'default',
     backgroundColor: '#f5f7fb',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });

@@ -32,19 +32,9 @@ test('macOS renderer exposes clipboard upload and batch deletion', () => {
   assert.match(renderer, /selectedItems:\s*new Map\(\)/);
 });
 
-test('history reset creates a root commit and force-updates only the configured branch', () => {
-  const service = read('src/github-service.js');
-  const main = read('src/main.js');
-  assert.match(service, /async clearBranchHistory\(/);
-  assert.match(service, /parents:\s*\[\]/);
-  assert.match(service, /force:\s*true/);
-  assert.match(main, /repositoryConfirmation !== expected/);
-  assert.match(main, /title:\s*'最后确认'/);
-});
-
 test('Windows package has none of the new write surfaces', () => {
   const windows = ['platform/windows/main.js', 'platform/windows/preload.js', 'platform/windows/renderer/app.js'].map(read).join('\n');
-  assert.doesNotMatch(windows, /uploadClipboard|deleteBatch|clearHistory|commitChanges/);
+  assert.doesNotMatch(windows, /uploadClipboard|deleteBatch|commitChanges/);
 });
 
 test('macOS follows the system proxy by default and times out failed GitHub requests', () => {

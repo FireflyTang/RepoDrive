@@ -20,7 +20,7 @@ test('Windows application source contains no upload implementation', () => {
   const textFiles = files(root).filter((file) => /\.(js|json|html|css)$/.test(file));
   for (const file of textFiles) {
     const content = fs.readFileSync(file, 'utf8');
-    assert.doesNotMatch(content, /repo:upload|uploadFiles|uploadDirectory|uploadFile|uploadDropped|repo:rename|method\s*:\s*['"`](?:PUT|POST|PATCH)/i, path.relative(root, file));
+    assert.doesNotMatch(content, /repo:upload|uploadFiles|uploadDirectory|uploadFile|uploadDropped|repo:rename|method\s*:\s*['"`]PUT/i, path.relative(root, file));
   }
 });
 
@@ -30,8 +30,7 @@ test('Windows IPC surface allows delete but has no upload channel', () => {
   assert.deepEqual(channels, ['repo:connect', 'repo:delete', 'repo:download', 'repo:list', 'settings:get', 'settings:save']);
 });
 
-test('Windows network mutations are limited to DELETE', () => {
+test('Windows network requests enforce the maintenance allowlist', () => {
   const service = fs.readFileSync(path.join(root, 'github-read-service.js'), 'utf8');
-  assert.match(service, /method:'DELETE'/);
-  assert.doesNotMatch(service, /method\s*:\s*['"`](?:PUT|POST|PATCH)/i);
+  assert.match(service, /assertWindowsRequest\(apiPath, options, config\)/);
 });

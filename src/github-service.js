@@ -70,6 +70,7 @@ class GitHubService {
       .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1));
   }
 
+  async listRecent(remotePath = '') { return require('./file-history').listByRecentCommit(this, remotePath); }
   async downloadFile(repoPath) {
     const c = this.getConfig();
     const clean = normalizeRepoPath(repoPath);
@@ -162,18 +163,7 @@ class GitHubService {
     return { commitSha: commit.sha, changed: normalized.length };
   }
 
-  async clearBranchHistory(message = 'Reset history via RepoDrive') {
-    const c = this.getConfig();
-    const head = await this.branchHead();
-    const commit = await this.request(`${this.repoPrefix(c)}/git/commits`, {
-      method: 'POST', body: { message, tree: head.treeSha, parents: [] }
-    });
-    const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
-    await this.request(`${this.repoPrefix(c)}/git/refs/heads/${branchRef}`, {
-      method: 'PATCH', body: { sha: commit.sha, force: true }
-    });
-    return { previousCommitSha: head.commitSha, commitSha: commit.sha };
-  }
+
 }
 
 module.exports = { GitHubService, GitHubError };

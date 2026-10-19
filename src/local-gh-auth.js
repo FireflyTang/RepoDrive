@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
 function ghCandidates(platform = process.platform, env = process.env) {
@@ -12,7 +13,9 @@ function ghCandidates(platform = process.platform, env = process.env) {
   const common = platform === 'darwin'
     ? ['/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/opt/local/bin/gh']
     : ['/usr/local/bin/gh', '/usr/bin/gh', '/snap/bin/gh', '/home/linuxbrew/.linuxbrew/bin/gh'];
-  return [...new Set([...fromPath, ...common, 'gh'])];
+  const home = env.HOME || os.homedir();
+  const userLocal = path.join(home, '.local', 'bin', 'gh');
+  return [...new Set([...fromPath, userLocal, ...common, 'gh'])];
 }
 
 function localGitHubToken(options = {}) {

@@ -5,6 +5,8 @@ const uploadAvailable = process.platform === 'darwin' || process.platform === 'l
 
 const api = {
   info: () => ipcRenderer.invoke('app:info'),
+  clearFiles:(repository)=>ipcRenderer.invoke('repo:clearFiles',repository),
+  clearHistory:(repository)=>ipcRenderer.invoke('repo:clearHistory',repository),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (value) => ipcRenderer.invoke('settings:save', value),
   connect: () => ipcRenderer.invoke('repo:connect'),
@@ -26,7 +28,6 @@ if (uploadAvailable) {
   api.uploadDropped = (paths) => ipcRenderer.invoke('repo:uploadDropped', paths);
   api.uploadClipboard = (path) => ipcRenderer.invoke('repo:uploadClipboard', path);
   api.deleteBatch = (items) => ipcRenderer.invoke('repo:deleteBatch', items);
-  api.clearHistory = (repository) => ipcRenderer.invoke('repo:clearHistory', repository);
   api.rename = (item, newName) => ipcRenderer.invoke('repo:rename', item, newName);
 }
 

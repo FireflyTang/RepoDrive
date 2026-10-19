@@ -33,7 +33,7 @@
         <div class="transfer hidden" id="transferBanner"><span class="spinner"></span><div><strong id="transferTitle">正在传输</strong><small id="transferDetail"></small><div class="progress-track"><span id="progressBar"></span></div></div></div>
         <div class="content-card" id="dropZone">
           <div class="drop-overlay" id="dropOverlay"><div><strong>上传到根目录</strong><span>松开即可上传文件或文件夹</span></div></div>
-          <div class="table-head"><span>选择 / 名称</span><span>大小</span><span>操作</span></div>
+          <p class="sort-note">最近上传 / 更新优先 · 按最后提交时间</p><div class="table-head"><span>选择 / 名称</span><span>大小</span><span>操作</span></div>
           <div id="fileList" class="file-list"></div>
           <div id="emptyState" class="empty-state"><div class="empty-icon">☁</div><h2>连接你的 GitHub 代码仓</h2><p>在“连接设置”中填写代码仓和访问令牌，即可像文件盘一样浏览。</p><button class="button primary" id="setupButton">开始设置</button></div>
         </div>
@@ -49,7 +49,8 @@
           <div class="field"><label for="proxy">HTTP/HTTPS 代理（可选）</label><input id="proxy" placeholder="http://127.0.0.1:7890"><small>留空则自动跟随 macOS/Linux 系统代理；填写后仅使用指定代理。</small></div>
           <div class="form-actions"><span id="saveStatus"></span><button type="submit" class="button primary" id="saveButton">保存并测试连接</button></div>
         </form>
-        <section class="danger-card" id="dangerCard"><div><strong>清空当前分支历史</strong><p>保留当前文件，把当前分支重写为一个新的根提交。此操作类似 force push。</p></div><button class="button danger" id="clearHistoryButton">清空历史记录</button></section>
+<section class="maintenance-card"><div><strong>一键清空文件</strong><p>删除已保存的根目录内全部文件和子目录；根目录留空时清空整个分支。保留提交历史。</p></div><button type="button" class="button danger" id="clearFilesButton">清空全部文件</button></section>
+<section class="maintenance-card"><div><strong>清除历史（force push）</strong><p>保留当前文件，把整个当前分支重写为一个根提交。旧上传时间将丢失，GitHub 不保证立即回收空间。</p></div><button type="button" class="button danger" id="clearHistoryButton">清除历史</button></section>
       </section>
     </main>
   </div>
@@ -61,16 +62,8 @@
       <div class="dialog-actions"><button class="button secondary" type="button" id="renameCancel">取消</button><button class="button primary" id="renameSubmit" type="submit">保存</button></div>
     </form>
   </dialog>
-  <dialog class="rename-dialog" id="clearHistoryDialog">
-    <form method="dialog" id="clearHistoryForm">
-      <h2>清空历史记录</h2>
-      <p>当前文件会保留，但当前分支上的旧提交将不可见。请输入完整代码仓名称确认：</p>
-      <strong class="confirmation-name" id="clearHistoryRepo"></strong>
-      <input id="clearHistoryInput" autocomplete="off" required>
-      <div class="dialog-actions"><button class="button secondary" type="button" id="clearHistoryCancel">取消</button><button class="button danger" id="clearHistorySubmit" type="submit">继续</button></div>
-    </form>
-  </dialog>
+<dialog class="maintenance-dialog" id="maintenanceDialog"><form id="maintenanceForm"><h2 id="maintenanceTitle"></h2><p id="maintenanceScope"></p><p>输入完整代码仓名称，再继续确认：</p><strong id="maintenanceRepo"></strong><input id="maintenanceInput" autocomplete="off" required aria-label="完整代码仓名称"><div class="maintenance-actions"><button type="button" class="button" id="maintenanceCancel">取消</button><button type="submit" class="button danger" id="maintenanceSubmit">继续</button></div></form></dialog>
   <div class="toast" id="toast"></div>
-  <script src="app.js"></script>
+  <script src="app.js"></script><script src="maintenance.js"></script>
 </body>
 </html>

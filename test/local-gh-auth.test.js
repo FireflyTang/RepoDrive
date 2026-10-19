@@ -35,3 +35,17 @@ test('Windows desktop never reads gh credentials', () => {
   assert.equal(token, '');
   assert.equal(called, false);
 });
+
+for (const platform of ['darwin', 'linux']) {
+  test(`${platform} finds user-local gh with a minimal desktop PATH`, () => {
+    const token = localGitHubToken({
+      platform,
+      env: { HOME: '/Users/example', PATH: '/usr/bin:/bin' },
+      execFileSync(executable) {
+        if (executable === '/Users/example/.local/bin/gh') return 'user-local-auth\n';
+        throw new Error('not found');
+      }
+    });
+    assert.equal(token, 'user-local-auth');
+  });
+}

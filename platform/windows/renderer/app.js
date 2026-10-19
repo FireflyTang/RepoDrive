@@ -43,7 +43,7 @@ function appendNodes(parentPath, depth, fragment) {
     if (item.type === 'dir') { toggle.append(icon('chevron')); toggle.onclick = () => toggleDirectory(item); } else toggle.disabled = true;
     const itemIcon = icon(item.type === 'dir' ? 'folder' : 'file'); itemIcon.classList.add('tree-kind');
     const label = document.createElement(item.type === 'dir' ? 'button' : 'span'); label.className = 'tree-label'; label.textContent = item.name; if (item.type === 'dir') label.onclick = () => toggleDirectory(item);
-    main.append(toggle, itemIcon, label);
+    main.append(toggle, itemIcon, datedLabel(item, label));
     const itemSize = document.createElement('span'); itemSize.textContent = item.type === 'dir' ? '文件夹' : size(item.size);
     const actions = document.createElement('span'); actions.className = 'actions'; actions.append(actionButton('download', '下载', () => download(item)), actionButton('trash', '删除', () => remove(item), true));
     row.append(main, itemSize, actions); fragment.append(row);
@@ -80,3 +80,10 @@ window.repoDrive.onProgress((value) => { $('progress').classList.remove('hidden'
 $('form').onsubmit = async (event) => { event.preventDefault(); $('status').textContent = '正在测试…'; try { const result = await window.repoDrive.saveSettings({ repository: $('repository').value, branch: $('branch').value, rootPath: $('rootPath').value, proxy: $('proxy').value, token: $('token').value, clearToken: $('clearToken').checked }); state.settings = result.settings; state.expanded.clear(); connected(true, result.repo.fullName); $('status').textContent = '连接成功'; view('files'); await refreshTree(); } catch (error) { $('status').textContent = '连接失败'; toast(message(error), true); } };
 
 init().catch((error) => toast(message(error), true));
+
+function datedLabel(item, label) {
+  const caption = document.createElement('div'); caption.className = 'tree-caption';
+  const date = document.createElement('small'); date.className = 'file-date';
+  date.textContent = item.updatedAt ? new Date(item.updatedAt).toLocaleString('zh-CN', { hour12: false }) : '时间未知';
+  date.title = '最近上传 / 更新（最后提交时间）'; caption.append(label, date); return caption;
+}
