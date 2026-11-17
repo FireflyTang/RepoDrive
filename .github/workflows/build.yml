@@ -45,7 +45,6 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: ${{ runner.temp }}/repodrive-source
     steps:
       - uses: actions/checkout@v4
       # Existing macOS verification and Windows audit resolve dist relative to
@@ -60,12 +59,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+        working-directory: ${{ runner.temp }}/repodrive-source
       - run: npm test
+        working-directory: ${{ runner.temp }}/repodrive-source
       - run: ${{ matrix.command }}
+        working-directory: ${{ runner.temp }}/repodrive-source
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - if: runner.os == 'Windows'
         run: npm run audit:win
+        working-directory: ${{ runner.temp }}/repodrive-source
       - if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
@@ -104,10 +107,12 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ github.ref_name }}
-      RELEASE_INCOMING: ${{ runner.temp }}/release-incoming
-      RELEASE_ASSETS: ${{ runner.temp }}/release-assets
     steps:
       - uses: actions/checkout@v4
+      - name: Set release directories
+        run: |
+          echo "RELEASE_INCOMING=$RUNNER_TEMP/release-incoming" >> "$GITHUB_ENV"
+          echo "RELEASE_ASSETS=$RUNNER_TEMP/release-assets" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
