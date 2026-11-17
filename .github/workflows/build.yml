@@ -33,6 +33,7 @@ jobs:
 
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -52,23 +53,23 @@ jobs:
       - name: Prepare temporary build source
         working-directory: ${{ github.workspace }}
         run: |
-          mkdir -p "$RUNNER_TEMP/repodrive-source"
-          cp -R "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/repodrive-source/"
+          mkdir -p "$RUNNER_TEMP/repodrive-source/checkout"
+          cp -R "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/repodrive-source/checkout/"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-        working-directory: ${{ runner.temp }}/repodrive-source
+        working-directory: ${{ runner.temp }}/repodrive-source/checkout
       - run: npm test
-        working-directory: ${{ runner.temp }}/repodrive-source
+        working-directory: ${{ runner.temp }}/repodrive-source/checkout
       - run: ${{ matrix.command }}
-        working-directory: ${{ runner.temp }}/repodrive-source
+        working-directory: ${{ runner.temp }}/repodrive-source/checkout
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - if: runner.os == 'Windows'
         run: npm run audit:win
-        working-directory: ${{ runner.temp }}/repodrive-source
+        working-directory: ${{ runner.temp }}/repodrive-source/checkout
       - if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
@@ -82,16 +83,16 @@ jobs:
         with:
           name: RepoDrive-macOS
           path: |
-            ${{ runner.temp }}/repodrive-source/dist/*.dmg
-            ${{ runner.temp }}/repodrive-source/dist/*.zip
+            ${{ runner.temp }}/repodrive-source/checkout/dist/*.dmg
+            ${{ runner.temp }}/repodrive-source/checkout/dist/*.zip
           if-no-files-found: error
       - if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: RepoDrive-Windows
           path: |
-            ${{ runner.temp }}/repodrive-source/dist/windows-readonly/*.exe
-            ${{ runner.temp }}/repodrive-source/dist/windows-readonly/*.zip
+            ${{ runner.temp }}/repodrive-source/checkout/dist/windows-readonly/*.exe
+            ${{ runner.temp }}/repodrive-source/checkout/dist/windows-readonly/*.zip
           if-no-files-found: error
 
   release:

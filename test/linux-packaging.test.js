@@ -84,15 +84,15 @@ test('CI builds each desktop platform in runner temporary storage with distribut
   assert.match(workflowScript('Set release directories'), /RELEASE_ASSETS=\$RUNNER_TEMP\/release-assets/);
   assert.match(workflow, /os: ubuntu-22\.04\s+command: npm run pack:linux -- --config\.directories\.output="\$RUNNER_TEMP\/repodrive-linux" --x64/);
   assert.match(workflow, /os: macos-latest\s+command: npx electron-builder --mac dmg zip --arm64 --publish never && node scripts\/verify-mac-package.js/);
-  assert.match(workflow, /working-directory: \$\{\{ runner\.temp \}\}\/repodrive-source/);
-  assert.match(workflowScript('Prepare temporary build source'), /cp -R "\$GITHUB_WORKSPACE\/\." "\$RUNNER_TEMP\/repodrive-source\/"/);
+  assert.match(workflow, /working-directory: \$\{\{ runner\.temp \}\}\/repodrive-source\/checkout/);
+  assert.match(workflowScript('Prepare temporary build source'), /cp -R "\$GITHUB_WORKSPACE\/\." "\$RUNNER_TEMP\/repodrive-source\/checkout\/"/);
   for (const extension of ['AppImage', 'tar.gz']) {
     assert.ok(workflow.includes('${{ runner.temp }}/repodrive-linux/*.' + extension));
   }
   for (const extension of ['dmg', 'zip']) {
-    assert.ok(workflow.includes('${{ runner.temp }}/repodrive-source/dist/*.' + extension));
+    assert.ok(workflow.includes('${{ runner.temp }}/repodrive-source/checkout/dist/*.' + extension));
   }
-  assert.ok(workflow.includes('${{ runner.temp }}/repodrive-source/dist/windows-readonly/*.exe'));
+  assert.ok(workflow.includes('${{ runner.temp }}/repodrive-source/checkout/dist/windows-readonly/*.exe'));
   assert.equal((workflow.match(/if-no-files-found: error/g) || []).length, 3);
   assert.doesNotMatch(workflow, /path: dist\/\*\*\/\*/);
 });
