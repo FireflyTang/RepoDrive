@@ -5,9 +5,12 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: read
+
 jobs:
   test-linux-cli:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -15,20 +18,43 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Install Electron display dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2
+      - name: Test CLI, real Electron transport and renderer
+        run: |
+          mkdir -p "$REPODRIVE_ELECTRON_TEST_WORK" "$REPODRIVE_RENDERER_TEST_WORK"
+          xvfb-run -a npm test
+        env:
+          REPODRIVE_ELECTRON_TEST: '1'
+          REPODRIVE_ELECTRON_TEST_WORK: ${{ runner.temp }}/repodrive-electron-tests
+          REPODRIVE_RENDERER_TEST_WORK: ${{ runner.temp }}/repodrive-renderer-tests
+          TMPDIR: ${{ runner.temp }}
       - run: npm exec repodrive -- --repo FireflyTang/RepoDrive info
 
   build:
     strategy:
       matrix:
         include:
-          - os: macos-14
-            command: npm run pack:mac
+          - os: macos-latest
+            command: npx electron-builder --mac dmg zip --arm64 --publish never && node scripts/verify-mac-package.js
           - os: windows-2022
             command: npm run pack:win
+          - os: ubuntu-22.04
+            command: npm run pack:linux -- --config.directories.output="$RUNNER_TEMP/repodrive-linux" --x64
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ runner.temp }}/repodrive-source
     steps:
       - uses: actions/checkout@v4
+      # Existing macOS verification and Windows audit resolve dist relative to
+      # the source. Build a temporary copy so their outputs also stay in temp.
+      - name: Prepare temporary build source
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/repodrive-source"
+          cp -R "$GITHUB_WORKSPACE/." "$RUNNER_TEMP/repodrive-source/"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -40,7 +66,96 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - if: runner.os == 'Windows'
         run: npm run audit:win
-      - uses: actions/upload-artifact@v4
+      - if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
-          name: RepoDrive-${{ runner.os }}
-          path: dist/**/*
+          name: RepoDrive-Linux
+          path: |
+            ${{ runner.temp }}/repodrive-linux/*.AppImage
+            ${{ runner.temp }}/repodrive-linux/*.tar.gz
+          if-no-files-found: error
+      - if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RepoDrive-macOS
+          path: |
+            ${{ runner.temp }}/repodrive-source/dist/*.dmg
+            ${{ runner.temp }}/repodrive-source/dist/*.zip
+          if-no-files-found: error
+      - if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: RepoDrive-Windows
+          path: |
+            ${{ runner.temp }}/repodrive-source/dist/windows-readonly/*.exe
+            ${{ runner.temp }}/repodrive-source/dist/windows-readonly/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [test-linux-cli, build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_INCOMING: ${{ runner.temp }}/release-incoming
+      RELEASE_ASSETS: ${{ runner.temp }}/release-assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: RepoDrive-*
+          path: ${{ env.RELEASE_INCOMING }}
+          merge-multiple: false
+      - name: Collect distributable assets
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const incoming = process.env.RELEASE_INCOMING;
+          const output = process.env.RELEASE_ASSETS;
+          const version = require('./package.json').version;
+          if (process.env.RELEASE_TAG !== `v${version}`) throw new Error('Tag/package version mismatch');
+          fs.mkdirSync(output, { recursive: true });
+          const names = new Set();
+          for (const platform of ['Linux', 'macOS', 'Windows']) {
+            const directory = path.join(incoming, `RepoDrive-${platform}`);
+            let count = 0;
+            // Only artifact-root regular files qualify; never descend into an
+            // unpacked application, even if it contains an allowed extension.
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+              if (!entry.isFile() || !/\.(dmg|zip|exe|AppImage|tar\.gz)$/.test(entry.name)) continue;
+              if (/unpacked|debug|symbols/i.test(entry.name)) continue;
+              const key = entry.name.toLowerCase();
+              if (names.has(key)) throw new Error(`Duplicate release asset: ${entry.name}`);
+              names.add(key);
+              fs.copyFileSync(path.join(directory, entry.name), path.join(output, entry.name), fs.constants.COPYFILE_EXCL);
+              count++;
+            }
+            if (!count) throw new Error(`No distributable assets for ${platform}`);
+          }
+          NODE
+      - name: Package CLI, source and checksums
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          npm pack --ignore-scripts --pack-destination "$RELEASE_ASSETS"
+          git archive --format=zip --prefix="RepoDrive-$version/" --output="$RELEASE_ASSETS/RepoDrive-$version-source.zip" HEAD
+          cd "$RELEASE_ASSETS"
+          sha256sum -- * > SHA256SUMS.txt
+      - name: Upload and publish Release
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes
+          fi
+          mapfile -d '' assets < <(find "$RELEASE_ASSETS" -maxdepth 1 -type f -print0)
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

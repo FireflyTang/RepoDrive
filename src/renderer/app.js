@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { selectedPath: '', connected: false, canUpload: false, settings: null, tree: new Map(), expanded: new Set(), loading: new Set(), selectedItems: new Map() };
+const state = { selectedPath: '', connected: false, canUpload: false, uploading: false, stopping: false, refreshingUpload: false, settings: null, tree: new Map(), expanded: new Set(), loading: new Set(), selectedItems: new Map() };
 let toastTimer;
 let renameTarget = null;
 let dragDepth = 0;
@@ -13,6 +13,11 @@ function showToast(message, error = false) {
 
 function errorMessage(error) { return String(error?.message || error || '操作失败').replace(/^Error invoking remote method '[^']+':\s*(?:[A-Za-z]*Error:\s*)?/, ''); }
 function formatSize(bytes) { if (!bytes) return '—'; const units = ['B', 'KB', 'MB', 'GB']; const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), 3); return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`; }
+function formatTransferSize(bytes) {
+  const units = ['B', 'KiB', 'MiB', 'GiB'];
+  const index = bytes > 0 ? Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1) : 0;
+  return (bytes / 1024 ** index).toFixed(index ? 2 : 0) + ' ' + units[index];
+}
 function joinPath(...parts) { return parts.filter(Boolean).join('/'); }
 
 function icon(kind) {
@@ -25,10 +30,11 @@ function icon(kind) {
 
 function setConnected(value, name) {
   state.connected = value; $('statusDot').classList.toggle('online', value); $('repoLabel').textContent = name || state.settings?.repository || '尚未连接';
-  $('refreshButton').disabled = !value; for (const el of document.querySelectorAll('.upload-action')) el.disabled = !value;
+  updateUploadControls();
 }
 
 function showView(name) {
+  dragDepth = 0; $('filesView').classList.remove('drag-active');
   $('filesView').classList.toggle('hidden', name !== 'files'); $('settingsView').classList.toggle('hidden', name !== 'settings');
   $('filesNav').classList.toggle('active', name === 'files'); $('settingsNav').classList.toggle('active', name === 'settings');
 }
@@ -102,16 +108,22 @@ function renderTree() {
   updateBatchToolbar();
 }
 
-async function refreshTree() {
+async function refreshTree(rethrow = false) {
   const expanded = [...state.expanded].sort((a, b) => a.split('/').length - b.split('/').length); state.tree.clear(); state.selectedItems.clear();
   try { await loadDirectory(''); for (const remotePath of expanded) { try { await loadDirectory(remotePath); } catch { state.expanded.delete(remotePath); } } setConnected(true); renderTree(); }
-  catch (error) { setConnected(false); state.tree.clear(); renderTree(); showToast(errorMessage(error), true); }
+  catch (error) { setConnected(false); state.tree.clear(); renderTree(); showToast(errorMessage(error), true); if (rethrow) throw error; }
 }
 
-async function download(item) { try { showToast(`正在下载 ${item.name}…`); const result = await window.repoDrive.download({ ...item, path: item.uiPath }); if (!result.canceled) showToast('下载完成，已在文件管理器中显示'); } catch (error) { showToast(errorMessage(error), true); } finally { hideTransfer(); } }
-async function remove(item) { try { const result = await window.repoDrive.delete({ ...item, path: item.uiPath }); if (!result.canceled) { if (state.selectedPath === item.uiPath || state.selectedPath.startsWith(`${item.uiPath}/`)) state.selectedPath = item.uiPath.split('/').slice(0, -1).join('/'); for (const expandedPath of [...state.expanded]) if (expandedPath === item.uiPath || expandedPath.startsWith(`${item.uiPath}/`)) state.expanded.delete(expandedPath); renderLocation(); showToast(`删除完成，共删除 ${result.deleted} 个文件`); await refreshTree(); } } catch (error) { showToast(errorMessage(error), true); } finally { hideTransfer(); } }
+async function download(item) {
+  if (state.uploading) { uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return; }
+ try { showToast(`正在下载 ${item.name}…`); const result = await window.repoDrive.download({ ...item, path: item.uiPath }); if (!result.canceled) showToast('下载完成，已在文件管理器中显示'); } catch (error) { showToast(errorMessage(error), true); } finally { hideTransfer(); } }
+async function remove(item) {
+  if (state.uploading) { uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return; }
+ try { const result = await window.repoDrive.delete({ ...item, path: item.uiPath }); if (!result.canceled) { if (state.selectedPath === item.uiPath || state.selectedPath.startsWith(`${item.uiPath}/`)) state.selectedPath = item.uiPath.split('/').slice(0, -1).join('/'); for (const expandedPath of [...state.expanded]) if (expandedPath === item.uiPath || expandedPath.startsWith(`${item.uiPath}/`)) state.expanded.delete(expandedPath); renderLocation(); showToast(`删除完成，共删除 ${result.deleted} 个文件`); await refreshTree(); } } catch (error) { showToast(errorMessage(error), true); } finally { hideTransfer(); } }
 
 async function removeSelected() {
+  if (state.uploading) { uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return; }
+
   if (!state.selectedItems.size) return;
   try {
     const result = await window.repoDrive.deleteBatch([...state.selectedItems.values()]);
@@ -121,6 +133,8 @@ async function removeSelected() {
 }
 
 function openRename(item) {
+  if (state.uploading) { uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return; }
+
   renameTarget = item;
   $('renameDescription').textContent = `修改“${item.name}”的名称，位置保持不变。`;
   $('renameInput').value = item.name;
@@ -130,6 +144,8 @@ function openRename(item) {
 }
 
 async function submitRename(event) {
+  if (state.uploading) { event.preventDefault(); uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return; }
+
   event.preventDefault();
   if (!renameTarget) return;
   const item = renameTarget;
@@ -150,12 +166,105 @@ async function submitRename(event) {
   finally { $('renameSubmit').disabled = false; hideTransfer(); }
 }
 
-function showTransfer(value) {
-  const banner = $('transferBanner'); banner.classList.remove('hidden'); banner.classList.toggle('indeterminate', value.kind !== 'upload');
-  $('transferTitle').textContent = value.kind === 'upload' ? `正在上传 ${value.completed || 0}/${value.total || 0}` : value.kind === 'rename' ? '正在重命名' : value.kind === 'delete' ? '正在删除目录' : '正在下载目录';
-  $('transferDetail').textContent = value.current || '正在整理文件…'; $('progressBar').style.width = value.total ? `${Math.round((value.completed || 0) / value.total * 100)}%` : '';
+function updateUploadControls() {
+  for (const el of document.querySelectorAll('.upload-action')) el.disabled = !state.connected || state.uploading;
+  $('refreshButton').disabled = !state.connected || state.uploading;
+  $('stopUploadButton').classList.toggle('hidden', !state.uploading);
+  $('stopUploadButton').disabled = state.stopping || state.refreshingUpload;
+  $('stopUploadButton').textContent = state.stopping ? '正在停止…' : '停止上传';
+  for (const id of ['saveButton', 'clearFilesButton', 'clearHistoryButton']) $(id).disabled = state.uploading;
 }
-function hideTransfer() { $('transferBanner').classList.add('hidden'); }
+
+function uploadFeedback(message, error = false) {
+  const el = $('uploadStatus'); el.textContent = message;
+  el.className = 'upload-status' + (error ? ' error' : '');
+  showToast(message, error);
+}
+
+function showTransfer(value) {
+  if (state.uploading && value.kind !== 'upload') return;
+  if (value.kind === 'upload' && (!state.uploading || state.stopping || state.refreshingUpload)) return;
+  const banner = $('transferBanner');
+  banner.classList.remove('hidden');
+  const upload = value.kind === 'upload';
+  const knownBytes = upload && !value.gitProgress && value.phase === 'uploading' && Number.isFinite(value.totalBytes) && value.totalBytes > 0 && Number.isFinite(value.transferredBytes);
+  banner.classList.toggle('indeterminate', !knownBytes);
+  const track = $('progressTrack');
+  track.removeAttribute('aria-valuenow'); track.removeAttribute('aria-valuetext');
+  $('progressBar').style.width = '';
+  if (upload) {
+    const phase = value.phase || 'preparing';
+    $('transferTitle').textContent = phase === 'committing' ? '正在创建 GitHub 提交…' : phase === 'uploading' ? (value.gitProgress ? '正在通过 Git 上传…' : '正在发送文件…') : '正在准备 / 扫描文件…';
+    const detail = [value.current, value.gitProgress, value.total ? `已处理 ${value.completed || 0}/${value.total} 个文件` : ''];
+    if (knownBytes) {
+      const sent = Math.max(0, Math.min(value.transferredBytes, value.totalBytes));
+      // Sending the full body is not completion: GitHub still has to respond and commit.
+      const percent = Math.floor(sent / value.totalBytes * 100);
+      detail.push(`已发送 ${formatTransferSize(sent)} / ${formatTransferSize(value.totalBytes)} · ${percent}%`);
+      detail.push('传输数据含编码开销');
+      if (sent === value.totalBytes) detail.push('发送完成，等待GitHub确认');
+      $('progressBar').style.width = `${percent}%`;
+      track.setAttribute('aria-valuenow', percent);
+    } else if (!value.gitProgress) {
+      detail.push(phase === 'committing' ? '等待 GitHub 确认，尚未完成' : '传输大小尚未确定');
+    }
+    if (value.gitProgress) detail.push(phase === 'committing' ? '等待远端确认，尚未完成' : 'Git 正在传输，等待远端确认');
+    $('transferDetail').textContent = detail.filter(Boolean).join(' · ');
+  } else {
+    $('transferTitle').textContent = value.kind === 'rename' ? '正在重命名' : value.kind === 'delete' ? '正在删除目录' : '正在下载目录';
+    $('transferDetail').textContent = value.current || '正在整理文件…';
+  }
+  track.setAttribute('aria-valuetext', $('transferTitle').textContent + ' ' + $('transferDetail').textContent);
+}
+function hideTransfer() { if (!state.uploading) $('transferBanner').classList.add('hidden'); }
+
+function canStartUpload() {
+  if (state.uploading) { uploadFeedback('正在上传或刷新目录，请等待当前操作完成。', true); return false; }
+  if (!state.canUpload) { uploadFeedback('当前平台不支持上传。', true); return false; }
+  if (!state.connected) { uploadFeedback('尚未连接代码仓，请先在连接设置中连接。', true); return false; }
+  return true;
+}
+
+async function runUpload(operation, success) {
+  if (!canStartUpload()) return;
+  state.uploading = true; state.stopping = false; state.refreshingUpload = false; updateUploadControls();
+  uploadFeedback('正在准备 / 扫描文件，请稍候…');
+  showTransfer({ kind: 'upload', phase: 'preparing' });
+  let uploaded = false;
+  try {
+    const result = await operation();
+    if (result.canceled) { uploadFeedback(state.stopping ? '用户已取消上传；后台可能已经提交，请刷新目录确认。' : '已取消文件选择，未上传。'); return; }
+    uploaded = true;
+    showTransfer({ kind: 'upload', phase: 'committing', current: '提交已完成，正在刷新目录…' });
+    state.refreshingUpload = true; updateUploadControls();
+    $('transferTitle').textContent = '正在刷新目录…';
+    $('transferDetail').textContent = '上传已完成，正在刷新目录。';
+    $('progressTrack').setAttribute('aria-valuetext', '正在刷新目录');
+    $('transferBanner').classList.add('indeterminate');
+    $('progressTrack').removeAttribute('aria-valuenow');
+    await refreshTree(true);
+    uploadFeedback(state.stopping ? '上传已完成；停止请求到达时提交已生效。' : success(result));
+  } catch (error) {
+    const message = errorMessage(error);
+    const canceled = state.stopping || /取消|停止|abort|cancel/i.test(message);
+    uploadFeedback(uploaded ? (state.stopping ? '上传已完成；停止请求到达时提交已生效。但目录刷新失败：' : '上传已完成，但目录刷新失败：') + message : canceled ? '用户已取消上传；后台可能已经提交，结果尚未确认，请刷新目录核对。' : '上传失败：' + message, true);
+  } finally {
+    state.uploading = false; state.stopping = false; state.refreshingUpload = false; updateUploadControls(); hideTransfer();
+  }
+}
+
+$('stopUploadButton').onclick = async () => {
+  if (!state.uploading || state.stopping || state.refreshingUpload) return;
+  state.stopping = true; updateUploadControls();
+  $('transferTitle').textContent = '正在停止…';
+  $('progressTrack').setAttribute('aria-valuetext', '正在停止，等待上传请求结束');
+  $('transferDetail').textContent = '等待上传请求结束；已发送的提交可能生效，请随后刷新确认。';
+  $('transferBanner').classList.add('indeterminate');
+  $('progressTrack').removeAttribute('aria-valuenow');
+  uploadFeedback('正在停止…已发送的提交可能生效，请等待请求结束并刷新确认。');
+  try { await window.repoDrive.cancelUpload(); }
+  catch (error) { if (state.uploading && state.stopping) uploadFeedback('停止请求失败：' + errorMessage(error) + '；仍在等待上传结束，请随后刷新确认。', true); }
+};
 
 async function init() {
   const [info, saved] = await Promise.all([window.repoDrive.info(), window.repoDrive.getSettings()]); state.canUpload = info.canUpload; state.settings = saved;
@@ -168,17 +277,18 @@ async function init() {
   if (saved.repository) { try { const repo = await window.repoDrive.connect(); setConnected(true, repo.fullName); await refreshTree(); } catch (error) { setConnected(false); showToast(errorMessage(error), true); showView('settings'); } }
 }
 
-$('filesNav').onclick = () => showView('files'); $('settingsNav').onclick = () => showView('settings'); $('setupButton').onclick = () => showView('settings'); $('refreshButton').onclick = refreshTree;
-async function upload(kind) { if (!state.canUpload || !state.connected) return; const method = kind === 'directory' ? 'uploadDirectory' : 'uploadFiles'; try { for (const el of document.querySelectorAll('.upload-action')) el.disabled = true; const result = await window.repoDrive[method](state.selectedPath); if (!result.canceled) { showToast(kind === 'directory' ? `目录 ${result.directory} 上传完成，共 ${result.uploaded.length} 个文件` : `已上传 ${result.uploaded.length} 个文件`); await refreshTree(); } } catch (error) { showToast(errorMessage(error), true); } finally { hideTransfer(); for (const el of document.querySelectorAll('.upload-action')) el.disabled = !state.connected; } }
+$('filesNav').onclick = () => showView('files'); $('settingsNav').onclick = () => showView('settings'); $('setupButton').onclick = () => showView('settings'); $('refreshButton').onclick = () => refreshTree();
+async function upload(kind) {
+  const method = kind === 'directory' ? 'uploadDirectory' : 'uploadFiles';
+  await runUpload(() => window.repoDrive[method](state.selectedPath), (result) => kind === 'directory' ? `目录 ${result.directory} 上传完成，共 ${result.uploaded.length} 个文件` : `已上传 ${result.uploaded.length} 个文件`);
+}
 $('uploadButton').onclick = () => upload('files'); $('uploadFolderButton').onclick = () => upload('directory');
 $('clearSelectionButton').onclick = () => { state.selectedItems.clear(); renderTree(); };
 $('batchDeleteButton').onclick = removeSelected;
 
 async function pasteClipboard() {
-  if (!state.canUpload || !state.connected) return;
-  try { const result = await window.repoDrive.uploadClipboard(state.selectedPath); showToast(`已将剪贴板${result.kind}上传为 ${result.name}`); await refreshTree(); }
-  catch (error) { showToast(errorMessage(error), true); }
-  finally { hideTransfer(); }
+  const destination = state.selectedPath;
+  await runUpload(() => window.repoDrive.uploadClipboard(destination), (result) => `已将剪贴板${result.kind}上传为 ${result.name}`);
 }
 $('pasteButton').onclick = pasteClipboard;
 document.addEventListener('paste', (event) => {
@@ -188,26 +298,31 @@ document.addEventListener('paste', (event) => {
 $('renameForm').onsubmit = submitRename;
 $('renameCancel').onclick = () => { $('renameDialog').close(); renameTarget = null; };
 $('renameDialog').addEventListener('cancel', () => { renameTarget = null; });
-const dropZone = $('dropZone');
+const dropZone = $('filesView');
+function resetDrag() { dragDepth = 0; dropZone.classList.remove('drag-active'); }
 for (const eventName of ['dragenter', 'dragover', 'dragleave', 'drop']) {
   dropZone.addEventListener(eventName, (event) => { event.preventDefault(); event.stopPropagation(); });
 }
-dropZone.addEventListener('dragenter', () => { if (state.canUpload && state.connected) { dragDepth += 1; dropZone.classList.add('drag-active'); } });
-dropZone.addEventListener('dragover', (event) => { if (state.canUpload && state.connected) event.dataTransfer.dropEffect = 'copy'; });
-dropZone.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) dropZone.classList.remove('drag-active'); });
-dropZone.addEventListener('drop', async (event) => {
-  dragDepth = 0; dropZone.classList.remove('drag-active');
-  if (!state.canUpload || !state.connected || !event.dataTransfer.files.length) return;
-  try {
-    showToast('正在上传到根目录…');
-    const paths = Array.from(event.dataTransfer.files, (file) => window.repoDrive.getPathForFile(file));
-    const result = await window.repoDrive.uploadDropped(paths);
-    showToast(`已上传到根目录，共 ${result.uploaded.length} 个文件（1 个提交）`);
-    await refreshTree();
-  } catch (error) { showToast(errorMessage(error), true); }
-  finally { hideTransfer(); }
+dropZone.addEventListener('dragenter', () => {
+  dragDepth += 1; dropZone.classList.add('drag-active');
+  $('dropTitle').textContent = state.uploading ? '正在上传，请稍候' : !state.connected ? '请先连接代码仓' : !state.canUpload ? '当前平台不支持上传' : '上传到根目录';
 });
-$('settingsForm').onsubmit = async (event) => { event.preventDefault(); $('saveButton').disabled = true; $('saveStatus').textContent = '正在测试连接…'; try { const payload = { repository: $('repository').value, branch: $('branch').value, rootPath: $('rootPath').value, token: $('token').value, proxy: $('proxy').value, clearToken: $('clearToken').checked }; const result = await window.repoDrive.saveSettings(payload); state.settings = result.settings; state.selectedPath = ''; state.expanded.clear(); state.selectedItems.clear(); setConnected(true, result.repo.fullName); $('token').value = ''; $('clearToken').checked = false; $('clearTokenRow').classList.toggle('hidden', !result.settings.hasToken); $('token').placeholder = '已安全保存；留空则保持不变'; $('saveStatus').textContent = '连接成功'; showToast('设置已保存，GitHub 连接正常'); showView('files'); renderLocation(); await refreshTree(); } catch (error) { $('saveStatus').textContent = '连接失败'; showToast(errorMessage(error), true); } finally { $('saveButton').disabled = false; } };
+dropZone.addEventListener('dragover', (event) => { if (event.dataTransfer) event.dataTransfer.dropEffect = state.canUpload && state.connected && !state.uploading ? 'copy' : 'none'; });
+dropZone.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) resetDrag(); });
+dropZone.addEventListener('drop', async (event) => {
+  resetDrag();
+  if ($('filesView').classList.contains('hidden') || !canStartUpload()) return;
+  const files = Array.from(event.dataTransfer?.files || []);
+  if (!files.length) { uploadFeedback('未收到可用的本地文件，请从文件管理器拖入文件或文件夹。', true); return; }
+  await runUpload(() => {
+    const paths = files.map((file) => window.repoDrive.getPathForFile(file));
+    if (paths.some((path) => typeof path !== 'string' || !path.trim())) throw new Error('无法读取本地文件路径，请使用上传文件或上传目录按钮。');
+    return window.repoDrive.uploadDropped(paths);
+  }, (result) => `已上传到根目录，共 ${result.uploaded.length} 个文件（1 个提交）`);
+});
+// Suppress browser file navigation outside the file view without a second upload handler.
+for (const name of ['dragover', 'drop']) document.addEventListener(name, (event) => event.preventDefault());
+$('settingsForm').onsubmit = async (event) => { event.preventDefault(); if (state.uploading) { uploadFeedback('正在上传或刷新目录，暂时不能修改连接设置。', true); return; } $('saveButton').disabled = true; $('saveStatus').textContent = '正在测试连接…'; try { const payload = { repository: $('repository').value, branch: $('branch').value, rootPath: $('rootPath').value, token: $('token').value, proxy: $('proxy').value, clearToken: $('clearToken').checked }; const result = await window.repoDrive.saveSettings(payload); state.settings = result.settings; state.selectedPath = ''; state.expanded.clear(); state.selectedItems.clear(); setConnected(true, result.repo.fullName); $('token').value = ''; $('clearToken').checked = false; $('clearTokenRow').classList.toggle('hidden', !result.settings.hasToken); $('token').placeholder = '已安全保存；留空则保持不变'; $('saveStatus').textContent = '连接成功'; showToast('设置已保存，GitHub 连接正常'); showView('files'); renderLocation(); await refreshTree(); } catch (error) { $('saveStatus').textContent = '连接失败'; showToast(errorMessage(error), true); } finally { $('saveButton').disabled = false; } };
 
 init().catch((error) => showToast(errorMessage(error), true));
 window.repoDrive.onTransferProgress(showTransfer);

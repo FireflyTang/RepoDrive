@@ -41,6 +41,6 @@ test('macOS follows the system proxy by default and times out failed GitHub requ
   const main = read('src/main.js');
   const service = read('src/github-service.js');
   assert.match(main, /proxy \? \{ proxyRules: proxy \} : \{ mode: 'system' \}/);
-  assert.match(service, /AbortSignal\.timeout\(30000\)/);
+  assert.match(service, /AbortSignal\.timeout\(options\.timeoutMs \?\? 30000\)/);
   assert.match(service, /无法连接 GitHub/);
 });

@@ -1,6 +1,6 @@
 {
   "name": "repo-drive",
-  "version": "0.8.0",
+  "version": "0.8.2",
   "description": "Use a GitHub repository as a small cross-platform file drive.",
   "main": "src/main.js",
   "bin": {
@@ -20,6 +20,7 @@
     "test": "node --test test/*.test.js",
     "audit:win": "node scripts/audit-windows-readonly.js",
     "pack:mac": "electron-builder --mac dmg zip --publish never && node scripts/verify-mac-package.js",
+    "pack:linux": "node scripts/pack-linux.js",
     "pack:win": "electron-builder --projectDir platform/windows --win nsis portable --x64 --publish never"
   },
   "dependencies": {
@@ -27,7 +28,8 @@
   },
   "devDependencies": {
     "electron": "^38.0.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "playwright-core": "^1.65.1"
   },
   "build": {
     "afterPack": "scripts/after-pack.js",
@@ -57,6 +59,15 @@
         "nsis",
         "portable"
       ]
+    },
+    "linux": {
+      "target": [
+        "tar.gz",
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "assets/linux/icon.png",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,

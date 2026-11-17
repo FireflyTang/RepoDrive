@@ -26,6 +26,7 @@ if (uploadAvailable) {
   api.uploadDirectory = (path) => ipcRenderer.invoke('repo:uploadDirectory', path);
   api.getPathForFile = (file) => webUtils.getPathForFile(file);
   api.uploadDropped = (paths) => ipcRenderer.invoke('repo:uploadDropped', paths);
+  api.cancelUpload = () => ipcRenderer.invoke('repo:cancelUpload');
   api.uploadClipboard = (path) => ipcRenderer.invoke('repo:uploadClipboard', path);
   api.deleteBatch = (items) => ipcRenderer.invoke('repo:deleteBatch', items);
   api.rename = (item, newName) => ipcRenderer.invoke('repo:rename', item, newName);

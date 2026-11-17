@@ -28,7 +28,7 @@ test('drag and drop always uploads to the configured root', () => {
   const renderer = read('src/renderer/app.js');
 
   assert.match(preload, /api\.getPathForFile\s*=\s*\(file\)\s*=>\s*webUtils\.getPathForFile\(file\)/);
-  assert.match(main, /uploadLocalFiles\(files, ''\)/);
+  assert.match(main, /uploadLocalFiles\(files, '', '', '', signal\)/);
   assert.match(renderer, /dropZone\.addEventListener\('drop'/);
   assert.match(renderer, /getPathForFile\(file\)/);
   assert.match(renderer, /uploadDropped\(paths\)/);

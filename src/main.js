@@ -11,6 +11,29 @@ const { normalizeRepoPath, parseRepository, validateBranch, validateProxy } = re
 
 let mainWindow;
 let runtimeConfig = null;
+let activeUpload = null;
+
+async function withUpload(operation) {
+  if (activeUpload) throw new Error('已有上传正在进行，请等待完成或先停止上传。');
+  const controller = new AbortController();
+  activeUpload = controller;
+  try {
+    return await operation(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const canceled = new Error('已停止上传。若停止时 GitHub 正在确认提交，结果可能已生效，请刷新目录确认。');
+      canceled.code = 'UPLOAD_CANCELED';
+      throw canceled;
+    }
+    throw error;
+  } finally {
+    activeUpload = null;
+  }
+}
+
+function uploadProgress(value) {
+  mainWindow?.webContents.send('transfer:progress', { kind: 'upload', ...value });
+}
 
 function resolvedConfig() {
   const stored = settings.getPublic();
@@ -121,33 +144,37 @@ async function renameRemoteItem(item, newName) {
   return { renamed: true, path: newUiPath, files: files.length };
 }
 
-async function collectLocalFiles(root, current = root, result = []) {
+async function collectLocalFiles(root, current = root, result = [], signal) {
+  signal?.throwIfAborted();
   for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+    signal?.throwIfAborted();
     if (entry.name === '.git') continue;
     const localPath = path.join(current, entry.name);
-    if (entry.isDirectory()) await collectLocalFiles(root, localPath, result);
+    if (entry.isDirectory()) await collectLocalFiles(root, localPath, result, signal);
     else if (entry.isFile()) result.push({ localPath, relativePath: path.relative(root, localPath).split(path.sep).join('/') });
   }
   return result;
 }
 
-async function uploadLocalFiles(files, current, prefix = '', message = '') {
+async function uploadLocalFiles(files, current, prefix = '', message = '', signal) {
+  signal?.throwIfAborted();
   const changes = [];
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index];
+    signal?.throwIfAborted();
     const stat = await fs.stat(file.localPath);
     if (stat.size > 100 * 1024 * 1024) throw new Error(`${file.relativePath} 超过 GitHub 单文件 100 MB 限制。`);
     const relative = [prefix, file.relativePath].filter(Boolean).join('/');
-    mainWindow?.webContents.send('transfer:progress', { kind: 'upload', current: relative, completed: index, total: files.length });
-    changes.push({ path: scopedPath(current, relative), bytes: await fs.readFile(file.localPath) });
+    uploadProgress({ phase: 'preparing', current: relative, completed: index, total: files.length });
+    changes.push({ path: scopedPath(current, relative), bytes: await fs.readFile(file.localPath, { signal }) });
   }
   await github.commitChanges(changes, message || `Upload ${files.length} item${files.length === 1 ? '' : 's'} via RepoDrive`, (progress) => {
     mainWindow?.webContents.send('transfer:progress', { kind: 'upload', ...progress });
-  });
+  }, { signal });
   return files.map((file) => [prefix, file.relativePath].filter(Boolean).join('/'));
 }
 
-async function uploadDroppedPaths(localPaths) {
+async function uploadDroppedPaths(localPaths, signal) {
   assertUploadAllowed();
   if (!resolvedConfig().token) throw new Error('上传需要 GitHub Token，请先在连接设置中填写。');
   const rawPaths = (localPaths || []).filter((value) => typeof value === 'string' && value.trim());
@@ -155,16 +182,18 @@ async function uploadDroppedPaths(localPaths) {
   const paths = [...new Set(rawPaths.map((value) => path.resolve(value)))];
   if (!paths.length) throw new Error('没有识别到可上传的文件或目录。');
   const files = [];
+  uploadProgress({ phase: 'preparing', current: '正在扫描拖入的文件和目录…' });
   for (const localPath of paths) {
+    signal?.throwIfAborted();
     const stat = await fs.stat(localPath);
     if (stat.isDirectory()) {
-      const nested = await collectLocalFiles(localPath);
+      const nested = await collectLocalFiles(localPath, localPath, [], signal);
       files.push(...nested.map((file) => ({ ...file, relativePath: [path.basename(localPath), file.relativePath].join('/') })));
     } else if (stat.isFile()) files.push({ localPath, relativePath: path.basename(localPath) });
   }
   if (!files.length) throw new Error('拖入的目录没有可上传文件；GitHub 不保存空目录。');
   if (files.length > 1000) throw new Error('单次拖放最多上传 1000 个文件，请拆分后重试。');
-  return { canceled: false, uploaded: await uploadLocalFiles(files, ''), destination: '/' };
+  return { canceled: false, uploaded: await uploadLocalFiles(files, '', '', '', signal), destination: '/' };
 }
 
 function clipboardFileName(extension) {
@@ -172,7 +201,8 @@ function clipboardFileName(extension) {
   return `clipboard-${stamp}.${extension}`;
 }
 
-async function uploadClipboard(current) {
+async function uploadClipboard(current, signal) {
+  signal?.throwIfAborted();
   assertUploadAllowed();
   if (!resolvedConfig().token) throw new Error('上传需要 GitHub 写权限。请先运行 gh auth login，或在连接设置中填写 Token。');
   const image = clipboard.readImage();
@@ -189,7 +219,7 @@ async function uploadClipboard(current) {
   const remotePath = scopedPath(current, name);
   await github.commitChanges([{ path: remotePath, bytes }], `Upload clipboard ${kind} via RepoDrive`, (progress) => {
     mainWindow?.webContents.send('transfer:progress', { kind: 'upload', ...progress });
-  });
+  }, { signal });
   return { name, kind, path: remotePath };
 }
 
@@ -212,6 +242,7 @@ function registerIpc() {
   ipcMain.handle('app:info', () => ({ platform: process.platform, canUpload: canUpload(), version: app.getVersion() }));
   ipcMain.handle('settings:get', () => settings.getPublic());
   ipcMain.handle('settings:save', async (_event, form) => {
+    if (activeUpload) throw new Error('正在上传，请先等待完成或停止上传再修改连接设置。');
     const previous = { ...resolvedConfig() };
     const parsed = parseRepository(form.repository);
     const clean = {
@@ -295,29 +326,36 @@ function registerIpc() {
     if (!resolvedConfig().token) throw new Error('重命名需要有写权限的 GitHub Token，请先在连接设置中填写。');
     return renameRemoteItem(item, newName);
   });
-  ipcMain.handle('repo:uploadFiles', async (_event, current) => {
+  ipcMain.handle('repo:uploadFiles', (_event, current) => withUpload(async (signal) => {
     assertUploadAllowed();
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择要上传的文件', properties: ['openFile', 'multiSelections'] });
     if (result.canceled) return { canceled: true, uploaded: [] };
     if (!resolvedConfig().token) throw new Error('上传需要 GitHub Token，请先在连接设置中填写。');
     const files = result.filePaths.map((localPath) => ({ localPath, relativePath: path.basename(localPath) }));
-    const uploaded = await uploadLocalFiles(files, current);
+    const uploaded = await uploadLocalFiles(files, current, '', '', signal);
     return { canceled: false, uploaded };
-  });
-  ipcMain.handle('repo:uploadDirectory', async (_event, current) => {
+  }));
+  ipcMain.handle('repo:uploadDirectory', (_event, current) => withUpload(async (signal) => {
     assertUploadAllowed();
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择要上传的目录', properties: ['openDirectory'] });
     if (result.canceled) return { canceled: true, uploaded: [] };
     if (!resolvedConfig().token) throw new Error('上传需要 GitHub Token，请先在连接设置中填写。');
     const root = result.filePaths[0];
-    const files = await collectLocalFiles(root);
+    uploadProgress({ phase: 'preparing', current: '正在扫描目录…' });
+    const files = await collectLocalFiles(root, root, [], signal);
     if (!files.length) throw new Error('所选目录没有可上传的文件；GitHub 不保存空目录。');
     if (files.length > 1000) throw new Error('单次目录上传最多 1000 个文件，请拆分后重试。');
-    const uploaded = await uploadLocalFiles(files, current, path.basename(root));
+    const uploaded = await uploadLocalFiles(files, current, path.basename(root), '', signal);
     return { canceled: false, uploaded, directory: path.basename(root) };
+  }));
+  ipcMain.handle('repo:uploadDropped', (_event, localPaths) => withUpload((signal) => uploadDroppedPaths(localPaths, signal)));
+  ipcMain.handle('repo:uploadClipboard', (_event, current) => withUpload((signal) => uploadClipboard(current, signal)));
+  ipcMain.handle('repo:cancelUpload', () => {
+    assertUploadAllowed();
+    if (!activeUpload) return { stopping: false };
+    activeUpload.abort();
+    return { stopping: true };
   });
-  ipcMain.handle('repo:uploadDropped', (_event, localPaths) => uploadDroppedPaths(localPaths));
-  ipcMain.handle('repo:uploadClipboard', (_event, current) => uploadClipboard(current));
   require('./repository-maintenance').registerMaintenance({ ipcMain, dialog, getWindow: () => mainWindow, getConfig: resolvedConfig, createService: (config) => new GitHubService(() => config) });
 }
 
@@ -341,3 +379,4 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('before-quit', () => { activeUpload?.abort(); });

@@ -1,7 +1,12 @@
 'use strict';
 
-const { net } = require('electron');
+const { net, session } = require('electron');
 const { normalizeRepoPath } = require('./validation');
+const { uploadRequest, uploadCanceledError, httpErrorMessage } = require('./upload-request');
+
+function checkCanceled(signal) {
+  if (signal?.aborted) throw uploadCanceledError();
+}
 
 class GitHubError extends Error {
   constructor(message, status = 0) {
@@ -17,6 +22,7 @@ class GitHubService {
   }
 
   async request(path, options = {}) {
+    checkCanceled(options.signal);
     const config = this.getConfig();
     const headers = {
       Accept: options.accept || 'application/vnd.github+json',
@@ -25,24 +31,41 @@ class GitHubService {
       ...(config.token ? { Authorization: `Bearer ${config.token}` } : {}),
       ...(options.headers || {})
     };
+    if (options.method === 'POST' && path.endsWith('/git/blobs')) {
+      try {
+        return await uploadRequest(net, `https://api.github.com${path}`, {
+          body: JSON.stringify(options.body),
+          headers: { 'Content-Type': 'application/json', ...headers },
+          session: session?.defaultSession,
+          signal: options.signal,
+          onUploadProgress: options.onUploadProgress
+        });
+      } catch (error) {
+        if (error.code === 'UPLOAD_CANCELED') throw error;
+        throw Object.assign(new GitHubError(error.message, error.status), { code: error.code });
+      }
+    }
     let response;
     try {
+      const timeoutSignal = options.timeoutMs === 0 ? undefined : AbortSignal.timeout(options.timeoutMs ?? 30000);
+      const signal = options.signal && timeoutSignal ? AbortSignal.any([options.signal, timeoutSignal]) : options.signal || timeoutSignal;
       response = await net.fetch(`https://api.github.com${path}`, {
         method: options.method || 'GET',
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
         cache: 'no-store',
-        signal: AbortSignal.timeout(30000)
+        signal
       });
     } catch (error) {
+      if (options.signal?.aborted || (options.timeoutMs === 0 && error?.name === 'AbortError')) throw uploadCanceledError();
       const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
-      throw new GitHubError(timedOut ? 'GitHub 请求超过 30 秒，请检查系统网络或代理设置' : '无法连接 GitHub，请检查系统网络或代理设置');
+      throw new GitHubError(timedOut ? `GitHub 请求超过 ${(options.timeoutMs ?? 30000) / 1000} 秒，请检查系统网络或代理设置` : '无法连接 GitHub，请检查系统网络或代理设置');
     }
     if (!response.ok) {
       let detail = '';
-      try { detail = (await response.json()).message || ''; } catch { detail = await response.text(); }
-      const hints = { 401: 'Token 无效或已过期', 403: '没有权限或已触发 GitHub 限制', 404: '找不到代码仓、分支或路径', 409: '代码仓为空或文件冲突', 422: '提交内容不符合 GitHub 要求' };
-      throw new GitHubError(hints[response.status] || detail || `GitHub 请求失败 (${response.status})`, response.status);
+      try { detail = response.text ? await response.text() : await response.json(); } catch { /* Retain the HTTP status if the body is unavailable. */ }
+      checkCanceled(options.signal);
+      throw new GitHubError(httpErrorMessage(response.status, detail), response.status);
     }
     if (options.raw) return Buffer.from(await response.arrayBuffer());
     if (response.status === 204) return null;
@@ -116,15 +139,18 @@ class GitHubService {
     });
   }
 
-  async branchHead() {
+  async branchHead(options = {}) {
     const c = this.getConfig();
     const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
-    const ref = await this.request(`${this.repoPrefix(c)}/git/ref/heads/${branchRef}`);
-    const commit = await this.request(`${this.repoPrefix(c)}/git/commits/${encodeURIComponent(ref.object.sha)}`);
+    const ref = await this.request(`${this.repoPrefix(c)}/git/ref/heads/${branchRef}`, options);
+    checkCanceled(options.signal);
+    const commit = await this.request(`${this.repoPrefix(c)}/git/commits/${encodeURIComponent(ref.object.sha)}`, options);
     return { commitSha: ref.object.sha, treeSha: commit.tree.sha };
   }
 
-  async commitChanges(changes, message, onProgress) {
+  async commitChanges(changes, message, onProgress, options = {}) {
+    const requestOptions = { signal: options.signal, timeoutMs: 0 };
+    checkCanceled(options.signal);
     const c = this.getConfig();
     if (!Array.isArray(changes) || !changes.length) throw new Error('没有需要提交的文件变更。');
     const seen = new Set();
@@ -135,31 +161,66 @@ class GitHubService {
       seen.add(clean);
       return { ...change, path: clean };
     });
-    const head = await this.branchHead();
-    const tree = [];
+    if (normalized.some((change) => !change.delete &&
+      (Buffer.isBuffer(change.bytes) ? change.bytes.length : Buffer.from(change.bytes).length) >= 20 * 1024 * 1024)) {
+      return require('./git-upload').commitViaGit(c, normalized, message, onProgress, { signal: options.signal });
+    }
     let completed = 0;
+    let transferredBytes = 0;
+    // These are HTTP body bytes (Base64 + JSON), not original file sizes.
+    const blobOverhead = Buffer.byteLength(JSON.stringify({ content: '', encoding: 'base64' }));
+    const blobSizes = new Map(normalized.filter((change) => !change.delete).map((change) => [
+      change.path, 4 * Math.ceil((Buffer.isBuffer(change.bytes) ? change.bytes.length : Buffer.from(change.bytes).length) / 3) + blobOverhead
+    ]));
+    let totalBytes = [...blobSizes.values()].reduce((sum, size) => sum + size, 0);
+    const progress = (phase, current = '') => onProgress?.({
+      phase, current, completed, total: normalized.length, transferredBytes, totalBytes
+    });
+    progress('preparing');
+    const head = await this.branchHead(requestOptions);
+    const tree = [];
     for (const change of normalized) {
+      checkCanceled(options.signal);
+      progress('uploading', change.path);
       if (change.delete) tree.push({ path: change.path, mode: '100644', type: 'blob', sha: null });
       else {
+        const previousBytes = transferredBytes;
         const blob = await this.request(`${this.repoPrefix(c)}/git/blobs`, {
           method: 'POST',
-          body: { content: Buffer.from(change.bytes).toString('base64'), encoding: 'base64' }
+          body: { content: Buffer.from(change.bytes).toString('base64'), encoding: 'base64' },
+          ...requestOptions,
+          onUploadProgress: ({ sent, total }) => {
+            if (!Number.isFinite(sent) || !Number.isFinite(total) || sent < 0 || total <= 0 || sent > total) return;
+            totalBytes += total - blobSizes.get(change.path);
+            blobSizes.set(change.path, total);
+            transferredBytes = Math.max(transferredBytes, previousBytes + sent);
+            progress('uploading', change.path);
+          }
         });
         tree.push({ path: change.path, mode: '100644', type: 'blob', sha: blob.sha });
       }
       completed += 1;
-      onProgress?.({ completed, total: normalized.length, current: change.path });
+      progress('uploading', change.path);
     }
+    progress('committing');
+    checkCanceled(options.signal);
     const nextTree = await this.request(`${this.repoPrefix(c)}/git/trees`, {
+      ...requestOptions,
       method: 'POST', body: { base_tree: head.treeSha, tree }
     });
+    checkCanceled(options.signal);
     const commit = await this.request(`${this.repoPrefix(c)}/git/commits`, {
+      ...requestOptions,
       method: 'POST', body: { message, tree: nextTree.sha, parents: [head.commitSha] }
     });
+    progress('committing');
     const branchRef = c.branch.split('/').map(encodeURIComponent).join('/');
+    checkCanceled(options.signal);
     await this.request(`${this.repoPrefix(c)}/git/refs/heads/${branchRef}`, {
+      ...requestOptions,
       method: 'PATCH', body: { sha: commit.sha, force: false }
     });
+    progress('committing');
     return { commitSha: commit.sha, changed: normalized.length };
   }
 

@@ -52,7 +52,7 @@ button.tree-label:hover { color:var(--blue); }
 .tree-loading { height:36px; display:flex; align-items:center; padding-left:calc(48px + var(--depth) * 22px); color:var(--muted); font-size:12px; border-bottom:1px solid #edf0f4; }
 .drop-overlay { position:absolute; inset:0; z-index:10; display:grid; place-items:center; padding:24px; background:#edf4fff2; border:2px dashed #3470ea; border-radius:12px; opacity:0; visibility:hidden; pointer-events:none; transition:.15s; }
 .drop-overlay div { text-align:center; color:#1d4ed8; }.drop-overlay strong,.drop-overlay span { display:block; }.drop-overlay strong { font-size:20px; }.drop-overlay span { margin-top:7px; font-size:13px; color:#5572a8; }
-.content-card.drag-active .drop-overlay { opacity:1; visibility:visible; }
+#filesView.drag-active .drop-overlay { opacity:1; visibility:visible; }
 .rename-dialog { width:min(440px,calc(100vw - 40px)); border:0; border-radius:13px; padding:0; box-shadow:0 22px 70px #1018283d; }.rename-dialog::backdrop { background:#10182866; backdrop-filter:blur(2px); }.rename-dialog form { padding:24px; }.rename-dialog h2 { margin:0; font-size:19px; }.rename-dialog p { margin:8px 0 16px; color:var(--muted); font-size:12px; }.rename-dialog input { width:100%; padding:10px 12px; border:1px solid #cfd7e3; border-radius:8px; outline:none; user-select:text; }.rename-dialog input:focus { border-color:#5b86ed; box-shadow:0 0 0 3px #2e6ef21a; }.dialog-actions { display:flex; justify-content:flex-end; gap:9px; margin-top:20px; }
 .confirmation-name { display:block; margin:-6px 0 9px; color:#b42318; font-size:13px; user-select:text; }
 
@@ -67,3 +67,11 @@ button.tree-label:hover { color:var(--blue); }
 .maintenance-dialog h2 {font-size:19px;margin:0}.maintenance-dialog p {font-size:13px;line-height:1.6}.maintenance-dialog strong {display:block;color:#b42318;overflow-wrap:anywhere}
 .maintenance-dialog input {box-sizing:border-box;width:100%;margin:12px 0;padding:10px;border:1px solid #cfd7e3;border-radius:8px;user-select:text}
 .maintenance-actions {display:flex;justify-content:flex-end;gap:10px}.maintenance-actions button {padding:9px 14px;border-radius:8px;cursor:pointer}
+
+#filesView { position:relative; min-height:calc(100vh - 84px); display:flex; flex-direction:column; }
+#filesView .content-card { position:static; flex:1; min-height:220px; }
+.upload-status { padding:11px 14px; margin:0 0 15px; border:1px solid #cfddff; border-radius:9px; background:#eef4ff; color:#254a9b; font-size:13px; overflow-wrap:anywhere; user-select:text; }
+.upload-status.error { background:#fff3f2; border-color:#efc4bf; color:#b42318; }
+.transfer small { white-space:normal; overflow-wrap:anywhere; line-height:1.6; }
+
+#stopUploadButton { align-self:flex-start; margin:0 0 15px; }

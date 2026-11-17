@@ -27,14 +27,26 @@ function getPublic() {
   return { repository: data.repository, branch: data.branch, rootPath: data.rootPath, proxy: data.proxy, hasToken: Boolean(data.tokenEncrypted) };
 }
 
+function canStoreToken() {
+  if (process.platform !== 'linux') return true;
+  try {
+    return safeStorage.isEncryptionAvailable()
+      && (typeof safeStorage.getSelectedStorageBackend !== 'function'
+        || safeStorage.getSelectedStorageBackend() !== 'basic_text');
+  } catch { return false; }
+}
+
 function getToken() {
   const value = read().tokenEncrypted;
-  if (!value) return '';
+  if (!value || !canStoreToken()) return '';
   try { return safeStorage.decryptString(Buffer.from(value, 'base64')); } catch { return ''; }
 }
 
 function save(next) {
   const current = read();
+  if (typeof next.token === 'string' && next.token && !canStoreToken()) {
+    throw new Error('Linux 安全存储不可用，无法安全保存 Token。请解锁 GNOME Keyring/KWallet，或使用 gh auth login 登录。');
+  }
   const tokenEncrypted = typeof next.token === 'string' && next.token
     ? safeStorage.encryptString(next.token).toString('base64')
     : (next.clearToken ? '' : current.tokenEncrypted);
