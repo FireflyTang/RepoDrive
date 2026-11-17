@@ -24,6 +24,10 @@ function harness() {
       if (name === './settings-store') return settings;
       if (name === './github-service') return { GitHubService: class { constructor() { return service; } } };
       if (name === './local-gh-auth') return { localGitHubToken: () => '' };
+      if (name === './platform-policy') {
+        const policy = require('../src/platform-policy');
+        return { ...policy, assertUploadAllowed: () => policy.assertUploadAllowed('linux') };
+      }
       if (name === './repository-maintenance') return { registerMaintenance() {} };
       if (name.startsWith('./')) return require(path.join(__dirname, '../src', name));
       return require(name);
