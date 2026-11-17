@@ -4,7 +4,7 @@ const path = require('node:path');
 const asar = require('@electron/asar');
 
 const archive = path.join(__dirname, '..', 'dist', 'windows-readonly', 'win-unpacked', 'resources', 'app.asar');
-const entries = asar.listPackage(archive);
+const entries = asar.listPackage(archive).map((entry) => entry.replace(/\\/g, '/'));
 const allowed = new Set([
   '/file-history.js', '/repository-maintenance.js', '/windows-request-policy.js', '/renderer/maintenance.js', '/github-read-service.js', '/main.js', '/package.json', '/preload.js', '/renderer',
   '/renderer/app.js', '/renderer/delete-actions.css', '/renderer/index.html', '/renderer/styles.css',
