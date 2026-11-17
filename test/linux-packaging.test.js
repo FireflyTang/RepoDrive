@@ -173,7 +173,7 @@ test('Release collector admits every distributable extension but ignores unpacke
   const result = collectAssets(fixture);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fs.readdirSync(fixture.output).sort(), [
-    'RepoDrive Setup.exe', 'RepoDrive-arm64-mac.zip', 'RepoDrive-arm64.dmg', 'RepoDrive-linux.AppImage',
+    'RepoDrive.Setup.exe', 'RepoDrive-arm64-mac.zip', 'RepoDrive-arm64.dmg', 'RepoDrive-linux.AppImage',
     'RepoDrive-linux.tar.gz', 'RepoDrive-portable.exe', 'RepoDrive-win.zip',
   ].sort());
 });

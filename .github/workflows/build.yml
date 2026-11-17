@@ -141,10 +141,13 @@ jobs:
             for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
               if (!entry.isFile() || !/\.(dmg|zip|exe|AppImage|tar\.gz)$/.test(entry.name)) continue;
               if (/unpacked|debug|symbols/i.test(entry.name)) continue;
-              const key = entry.name.toLowerCase();
+              // GitHub replaces spaces with dots in uploaded asset names.
+              // Normalize before checksumming so the manifest matches downloads.
+              const assetName = entry.name.replace(/ /g, '.');
+              const key = assetName.toLowerCase();
               if (names.has(key)) throw new Error(`Duplicate release asset: ${entry.name}`);
               names.add(key);
-              fs.copyFileSync(path.join(directory, entry.name), path.join(output, entry.name), fs.constants.COPYFILE_EXCL);
+              fs.copyFileSync(path.join(directory, entry.name), path.join(output, assetName), fs.constants.COPYFILE_EXCL);
               count++;
             }
             if (!count) throw new Error(`No distributable assets for ${platform}`);
