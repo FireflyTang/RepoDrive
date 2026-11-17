@@ -68,7 +68,7 @@ test('Linux afterPack skips the macOS signing hook', async () => {
   await afterPack({ electronPlatformName: 'linux' });
 });
 
-const workflow = fs.readFileSync(path.join(root, '.github/workflows/build.yml'), 'utf8');
+const workflow = fs.readFileSync(path.join(root, '.github/workflows/build.yml'), 'utf8').replace(/\r\n/g, '\n');
 
 function workflowScript(name) {
   const step = workflow.split(`      - name: ${name}\n`)[1];
@@ -192,7 +192,7 @@ test('Release collector rejects duplicate names, missing platforms, and mismatch
 });
 
 test('Release upload preserves existing notes, publishes only after upload success, and supports reruns', (t) => {
-  if (process.platform === 'win32') return t.skip('release shell runs on Ubuntu');
+  if (process.platform !== 'linux') return t.skip('release shell runs on Ubuntu');
   const fixture = releaseFixture(t);
   fs.mkdirSync(fixture.output);
   fs.writeFileSync(path.join(fixture.output, 'RepoDrive Setup.exe'), 'fixture');
