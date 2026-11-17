@@ -80,7 +80,7 @@ function workflowScript(name) {
 
 test('CI builds each desktop platform in runner temporary storage with distributable-only uploads', () => {
   // GitHub evaluates job defaults/env before runner context is available.
-  assert.doesNotMatch(workflow, /defaults:\n(?:[^\n]*\n)*?\s+working-directory: \$\{\{ runner\.temp/);
+  assert.doesNotMatch(workflow.match(/    defaults:\n(?:      .*\n)*/)?.[0] || '', /runner\.temp/);
   assert.match(workflowScript('Set release directories'), /RELEASE_ASSETS=\$RUNNER_TEMP\/release-assets/);
   assert.match(workflow, /os: ubuntu-22\.04\s+command: npm run pack:linux -- --config\.directories\.output="\$RUNNER_TEMP\/repodrive-linux" --x64/);
   assert.match(workflow, /os: macos-latest\s+command: npx electron-builder --mac dmg zip --arm64 --publish never && node scripts\/verify-mac-package.js/);
